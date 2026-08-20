@@ -133,7 +133,7 @@ export class UpgradeSystem {
         id: 'multiShot',
         name: '分裂发射',
         level: this.levels.multiShot,
-        description: `额外球概率 ${Math.round(this.extraBallChance * 100)}% → ${Math.round((1 - (1 - GAME.upgrade.extraBallChancePerLevel) ** (this.levels.multiShot + 1)) * 100)}%，并解锁随机角度`,
+        description: `额外球概率 ${Math.round(this.extraBallChance * 100)}% → ${Math.round((1 - (1 - GAME.upgrade.extraBallChancePerLevel) ** (this.levels.multiShot + 1)) * 100)}%；额外球随机方向，主球保持竖直`,
       },
       {
         id: 'ballSpeed',

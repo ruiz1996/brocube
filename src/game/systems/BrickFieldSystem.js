@@ -38,6 +38,15 @@ function randomPolygon(width, height) {
   return convexHull(candidates);
 }
 
+export function selectBrickDimensions(random = Math.random, bounds = GAME.brick) {
+  const widthProgress = random() ** bounds.widthBiasExponent;
+  const heightProgress = random() ** bounds.heightBiasExponent;
+  return {
+    width: bounds.minWidth + (bounds.maxWidth - bounds.minWidth) * widthProgress,
+    height: bounds.minHeight + (bounds.maxHeight - bounds.minHeight) * heightProgress,
+  };
+}
+
 export function calculateExpectedBrickHitPoints({ elapsed, score }, formula = GAME.brick.healthFormula) {
   const minutes = Math.max(0, elapsed) / 60;
   const normalizedScore = Math.max(0, score) / Math.max(1, formula.scoreScale);
@@ -177,8 +186,11 @@ export class BrickFieldSystem {
   #spawnBrick(lane, y, options = {}) {
     const laneCount = options.laneCount ?? 9;
     const laneWidth = (GAME.width - 34) / laneCount;
-    const width = options.width ?? randomBetween(GAME.brick.minWidth, GAME.brick.maxWidth);
-    const height = options.height ?? randomBetween(GAME.brick.minHeight, GAME.brick.maxHeight);
+    const dimensions = options.width === undefined || options.height === undefined
+      ? selectBrickDimensions()
+      : {};
+    const width = options.width ?? dimensions.width;
+    const height = options.height ?? dimensions.height;
     const horizontalJitter = options.horizontalJitter ?? 8;
     const x = options.x ?? 17 + lane * laneWidth + (laneWidth - width) / 2 + randomBetween(-horizontalJitter, horizontalJitter);
     const hitPoints = options.hitPoints ?? selectBrickHitPoints({

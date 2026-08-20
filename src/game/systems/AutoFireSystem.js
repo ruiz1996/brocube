@@ -17,8 +17,7 @@ export class AutoFireSystem {
   update(dt) {
     this.timeUntilShot -= dt;
     if (this.timeUntilShot > 0) return;
-    const randomized = this.scene.upgrades.levels.multiShot > 0;
-    this.#fireBall({ randomized });
+    this.#fireBall({ randomized: false });
     if (this.random() < this.scene.upgrades.extraBallChance) {
       this.#fireBall({ randomized: true, source: 'multi-shot' });
     }

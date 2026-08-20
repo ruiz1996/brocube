@@ -5,7 +5,11 @@ import { Entity, World } from '../src/core/Entity.js';
 import { GameEngine } from '../src/core/GameEngine.js';
 import { BreakoutScene } from '../src/game/BreakoutScene.js';
 import { GAME } from '../src/game/config.js';
-import { calculateExpectedBrickHitPoints, selectBrickHitPoints } from '../src/game/systems/BrickFieldSystem.js';
+import {
+  calculateExpectedBrickHitPoints,
+  selectBrickDimensions,
+  selectBrickHitPoints,
+} from '../src/game/systems/BrickFieldSystem.js';
 import { calculateUpgradeScoreCost } from '../src/game/systems/UpgradeSystem.js';
 import { ComboPlugin } from '../src/game/plugins/ComboPlugin.js';
 import { BASIC_BALL_ID, createDefaultBallDefinitions } from '../src/game/balls/BallDefinitionRegistry.js';
@@ -154,7 +158,7 @@ test('发射器可独立切换挡板发射和顶部发射', () => {
     radius: GAME.ball.radius,
   });
   assert.equal(paddleShot.x, 160);
-  assert.ok(Math.sin(paddleShot.angle) < 0);
+  assert.equal(paddleShot.angle, -Math.PI / 2);
 
   const topShot = emitters.createShot('top', {
     scene,
@@ -163,6 +167,17 @@ test('发射器可独立切换挡板发射和顶部发射', () => {
   });
   assert.equal(topShot.y, GAME.playTop + GAME.ball.radius + 3);
   assert.ok(Math.sin(topShot.angle) > 0);
+});
+
+test('普通方块尺寸采样偏向横向扁长并保留随机范围', () => {
+  const middle = selectBrickDimensions(() => .5);
+  assert.ok(middle.width / middle.height > 1.5);
+
+  const sequence = [0, 0, 1, 1];
+  const minimum = selectBrickDimensions(() => sequence.shift());
+  const maximum = selectBrickDimensions(() => sequence.shift());
+  assert.deepEqual(minimum, { width: GAME.brick.minWidth, height: GAME.brick.minHeight });
+  assert.deepEqual(maximum, { width: GAME.brick.maxWidth, height: GAME.brick.maxHeight });
 });
 
 test('碰撞策略可穿透后回退为反弹，分裂只创建基础衍生球', () => {
@@ -467,11 +482,20 @@ test('分数强化可以重复选择并作用于发球和场上球', () => {
   scene.upgrades.check(scene.upgrades.nextScore);
   scene.chooseUpgrade('multiShot');
   assert.equal(scene.upgrades.levels.multiShot, 1);
-  const ballCount = scene.world.all('ball').length;
+  const existingBalls = scene.world.all('ball');
+  const ballCount = existingBalls.length;
+  const existingBallIds = new Set(existingBalls.map((candidate) => candidate.id));
   scene.autoFire.random = () => 0;
   scene.autoFire.timeUntilShot = 0;
   scene.update(1 / 120);
   assert.equal(scene.world.all('ball').length, ballCount + 2);
+  const newBalls = scene.world.all('ball').filter((candidate) => !existingBallIds.has(candidate.id));
+  const automaticLaunch = newBalls.find((candidate) => Math.abs(candidate.velocityX) < .0001);
+  const extraLaunch = newBalls.find((candidate) => Math.abs(candidate.velocityX) >= .0001);
+  assert.ok(automaticLaunch);
+  assert.ok(extraLaunch);
+  assert.ok(automaticLaunch.velocityY < 0);
+  assert.ok(extraLaunch.velocityY < 0);
 
   const ball = scene.world.first('ball');
   const speedBefore = Math.hypot(ball.velocityX, ball.velocityY);
