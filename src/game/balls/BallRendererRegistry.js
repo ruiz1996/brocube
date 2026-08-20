@@ -94,5 +94,63 @@ export function createDefaultBallRenderers() {
     ctx.restore();
   });
 
+  registry.register('blast-core', (ctx, ball) => {
+    const pulse = .5 + Math.sin((ball.age ?? 0) * 12) * .5;
+    const blastEffect = ball.periodicEffects.find((effect) => effect.id === 'area-blast');
+    const charge = blastEffect
+      ? Math.max(0, Math.min(1, 1 - blastEffect.timeRemaining / blastEffect.interval))
+      : 0;
+    ctx.save();
+
+    for (let index = ball.trail.length - 1; index >= 0; index -= 1) {
+      const point = ball.trail[index];
+      const progress = 1 - index / ball.trail.length;
+      ctx.globalAlpha = .04 + progress * .2;
+      ctx.fillStyle = index % 2 === 0 ? ball.visual.trailColor : ball.visual.color;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, Math.max(1, ball.radius * progress * .7), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.translate(ball.x, ball.y);
+    ctx.shadowColor = ball.visual.color;
+    ctx.shadowBlur = 24 + pulse * 12;
+    ctx.strokeStyle = 'rgba(217, 140, 255, .38)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, ball.radius * (1.55 + pulse * .16), 0, Math.PI * 2);
+    ctx.stroke();
+
+    const orbit = (ball.age ?? 0) * 4.5;
+    for (let index = 0; index < 3; index += 1) {
+      const angle = orbit + index * Math.PI * 2 / 3;
+      const distance = ball.radius * 1.5;
+      ctx.fillStyle = index === 0 ? '#fff5ff' : ball.visual.innerColor;
+      ctx.beginPath();
+      ctx.arc(Math.cos(angle) * distance, Math.sin(angle) * distance, 1.5 + pulse, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.shadowBlur = 28;
+    const core = ctx.createRadialGradient(-2, -2, 0, 0, 0, ball.radius * 1.08);
+    core.addColorStop(0, ball.visual.coreColor);
+    core.addColorStop(.3, ball.visual.innerColor);
+    core.addColorStop(.72, ball.visual.color);
+    core.addColorStop(1, '#651d9c');
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(0, 0, ball.radius * 1.08, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.shadowBlur = 12;
+    ctx.strokeStyle = '#fff5ff';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, ball.radius * 1.92, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * charge);
+    ctx.stroke();
+    ctx.restore();
+  });
+
   return registry;
 }

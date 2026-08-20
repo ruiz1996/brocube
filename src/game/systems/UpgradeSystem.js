@@ -1,6 +1,14 @@
 import { GAME } from '../config.js';
 
-const UPGRADE_IDS = ['rapidFire', 'multiShot', 'topLaunch', 'ballSpeed', 'paddleLength', 'bottomBounce'];
+const UPGRADE_IDS = [
+  'rapidFire',
+  'multiShot',
+  'topLaunch',
+  'blastLaunch',
+  'ballSpeed',
+  'paddleLength',
+  'bottomBounce',
+];
 
 export class UpgradeSystem {
   constructor(scene) {
@@ -14,6 +22,7 @@ export class UpgradeSystem {
       rapidFire: 0,
       multiShot: 0,
       topLaunch: 0,
+      blastLaunch: 0,
       ballSpeed: 0,
       paddleLength: 0,
       bottomBounce: 0,
@@ -42,6 +51,10 @@ export class UpgradeSystem {
     return this.levels.topLaunch > 0 ? GAME.upgrade.topLaunchChance : 0;
   }
 
+  get blastLaunchChance() {
+    return this.levels.blastLaunch > 0 ? GAME.upgrade.blastLaunchChance : 0;
+  }
+
   get bottomBounceChance() {
     return Math.min(
       1,
@@ -60,6 +73,7 @@ export class UpgradeSystem {
   choose(id) {
     if (!this.waitingForChoice || !UPGRADE_IDS.includes(id)) return false;
     if (id === 'topLaunch' && this.levels.topLaunch >= GAME.upgrade.topLaunchMaxLevel) return false;
+    if (id === 'blastLaunch' && this.levels.blastLaunch >= GAME.upgrade.blastLaunchMaxLevel) return false;
     if (id === 'paddleLength' && this.levels.paddleLength >= GAME.upgrade.paddleLengthMaxLevel) return false;
     if (id === 'bottomBounce' && this.levels.bottomBounce >= GAME.upgrade.bottomBounceMaxLevel) return false;
     this.levels[id] += 1;
@@ -121,6 +135,13 @@ export class UpgradeSystem {
         level: this.levels.topLaunch,
         maxLevel: GAME.upgrade.topLaunchMaxLevel,
         description: `每次自动发射有 ${Math.round(GAME.upgrade.topLaunchChance * 100)}% 概率从顶部追加一颗 ${Math.round(GAME.upgrade.topLaunchSpeedMultiplier * 100)}% 速度球`,
+      },
+      {
+        id: 'blastLaunch',
+        name: '爆裂核心',
+        level: this.levels.blastLaunch,
+        maxLevel: GAME.upgrade.blastLaunchMaxLevel,
+        description: `每次自动发射有 ${Math.round(GAME.upgrade.blastLaunchChance * 100)}% 概率追加爆裂球，每 ${GAME.upgrade.blastInterval.toFixed(1)} 秒对 ${GAME.upgrade.blastRadius} 范围内方块造成 ${GAME.upgrade.blastDamage} 点伤害`,
       },
       {
         id: 'paddleLength',

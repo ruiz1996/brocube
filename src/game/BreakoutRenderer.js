@@ -7,6 +7,7 @@ export class BreakoutRenderer {
     this.#background(ctx);
     const { world } = this.scene;
     for (const brick of world.all('brick')) this.#brick(ctx, brick);
+    for (const wave of world.all('blast-wave')) this.#blastWave(ctx, wave);
     for (const particle of world.all('particle')) this.#particle(ctx, particle);
     for (const paddle of world.all('paddle')) this.#paddle(ctx, paddle);
     for (const ball of world.all('ball')) this.#ball(ctx, ball);
@@ -98,6 +99,40 @@ export class BreakoutRenderer {
     ctx.shadowColor = particle.color;
     ctx.shadowBlur = 7;
     ctx.fillRect(particle.x - particle.size / 2, particle.y - particle.size / 2, particle.size, particle.size);
+    ctx.restore();
+  }
+
+  #blastWave(ctx, wave) {
+    const progress = Math.max(0, Math.min(1, 1 - wave.life / wave.maxLife));
+    const eased = 1 - (1 - progress) ** 3;
+    const radius = Math.max(2, wave.radius * eased);
+    const alpha = (1 - progress) ** 1.4;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha * .24;
+    const flash = ctx.createRadialGradient(wave.x, wave.y, 0, wave.x, wave.y, radius);
+    flash.addColorStop(0, '#fff5ff');
+    flash.addColorStop(.16, wave.color);
+    flash.addColorStop(.58, wave.secondaryColor);
+    flash.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = flash;
+    ctx.beginPath();
+    ctx.arc(wave.x, wave.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = wave.color;
+    ctx.shadowBlur = 22;
+    ctx.strokeStyle = wave.color;
+    ctx.lineWidth = 4 * (1 - progress) + 1;
+    ctx.beginPath();
+    ctx.arc(wave.x, wave.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = wave.secondaryColor;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(wave.x, wave.y, radius * .72, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore();
   }
 

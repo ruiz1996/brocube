@@ -1,4 +1,4 @@
-import { Particle } from '../entities/entities.js';
+import { BlastWave, Particle } from '../entities/entities.js';
 
 export class EffectsSystem {
   constructor(scene) {
@@ -13,6 +13,11 @@ export class EffectsSystem {
         if (source !== 'top-launch') return;
         this.burst(ball.x, ball.y, '#ffad5a', 13);
         this.burst(ball.x, ball.y, '#ff5c7d', 7);
+      }),
+      scene.events.on('ball:exploded', ({ x, y, radius, color, secondaryColor }) => {
+        this.scene.world.add(new BlastWave({ x, y, radius, color, secondaryColor }));
+        this.burst(x, y, color, 18);
+        this.burst(x, y, secondaryColor, 8);
       }),
     ];
   }
@@ -39,6 +44,10 @@ export class EffectsSystem {
       particle.velocityY = particle.velocityY * .985 + 90 * dt;
       particle.life -= dt;
       if (particle.life <= 0) particle.destroy();
+    }
+    for (const wave of this.scene.world.all('blast-wave')) {
+      wave.life -= dt;
+      if (wave.life <= 0) wave.destroy();
     }
   }
 

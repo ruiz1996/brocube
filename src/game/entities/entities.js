@@ -26,6 +26,7 @@ export class Ball extends Entity {
     damage = 1,
     damageType = 'kinetic',
     damageEffects = [],
+    periodicEffects = [],
     collisionPolicy = 'bounce',
     collisionConfig = {},
     visual = {},
@@ -47,6 +48,15 @@ export class Ball extends Entity {
           ? { id: effect, config: {} }
           : { id: effect.id, config: { ...(effect.config ?? {}) } }
       )),
+      periodicEffects: periodicEffects.map((effect) => {
+        const interval = Math.max(.05, effect.interval ?? 1);
+        return {
+          id: effect.id,
+          interval,
+          timeRemaining: Math.max(0, effect.initialDelay ?? interval),
+          config: { ...(effect.config ?? {}) },
+        };
+      }),
       collisionPolicy,
       collisionConfig: { ...collisionConfig },
       collisionState: { ...collisionConfig },
@@ -92,5 +102,19 @@ export class Brick extends Entity {
 export class Particle extends Entity {
   constructor({ x, y, velocityX, velocityY, color, life = .45, size = 3 }) {
     super('particle', { x, y, velocityX, velocityY, color, life, maxLife: life, size });
+  }
+}
+
+export class BlastWave extends Entity {
+  constructor({ x, y, radius, color = '#ff5cab', secondaryColor = '#9b6cff', life = .5 }) {
+    super('blast-wave', {
+      x,
+      y,
+      radius,
+      color,
+      secondaryColor,
+      life,
+      maxLife: life,
+    });
   }
 }

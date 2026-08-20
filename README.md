@@ -52,7 +52,7 @@ src/
 - `BallDefinitionRegistry` 保存伤害、伤害类型、命中特效、方块碰撞策略、速度和外观。
 - `BallFactory` 是球的唯一推荐创建入口，区分 `primary` 主球和 `derived` 衍生球。
 - `BallEmitterRegistry` 决定发射来源和方向，内置 `paddle` 与 `top`。
-- `BallBehaviorRegistry` 管理命中特效以及 `bounce`、`pierce`、`split` 等碰撞策略。
+- `BallBehaviorRegistry` 管理命中特效、周期能力以及 `bounce`、`pierce`、`split` 等碰撞策略。
 - `BallCombatSystem` 是唯一伤害结算入口，统一发出受击、受伤和击杀事件。
 - `BallRendererRegistry` 按球定义选择外观绘制器。
 
@@ -117,11 +117,12 @@ scene.configureAutoFire({
 - **高速装填**：发射间隔每级乘以 `rapidFireMultiplier`，最低不会小于 `minimumFireInterval`。
 - **分裂发射**：每级增加额外生成一颗球的概率；概率按 `1 - (1 - extraBallChancePerLevel) ^ 等级` 叠加。选择一级后，新球改为向上半场随机角度发射。
 - **天顶增援**：每次自动发射时有 25% 概率从顶部追加一颗向下飞行的球，其发射速度为基础速度的 200%；顶部球带有金橙色脉冲光环、彗星尾迹和入场火花，最多 1 级。
+- **爆裂核心**：每次自动发射时有 25% 概率从挡板追加一颗爆裂球；爆裂球每 1.5 秒对半径 120 内的全部方块造成 1 点伤害，带有紫红旋转核心、爆炸倒计时环、扩张冲击波与双色碎屑，最多 1 级。
 - **动能超频**：所有现存和未来球的速度每级乘以 `ballSpeedMultiplierPerLevel`。
 - **延展力场**：挡板长度每级增加 20%，最多 3 级；满级后退出候选池。
 - **底线回响**：球落底时每级增加 20% 向上反弹概率，最多 3 级；满级概率为 60%。
 
-这些参数都集中在 `config.js` 的 `GAME.upgrade`。高速装填、分裂发射和动能超频可无限重复选择；天顶增援最多 1 级，延展力场和底线回响最多 3 级。
+这些参数都集中在 `config.js` 的 `GAME.upgrade`。高速装填、分裂发射和动能超频可无限重复选择；天顶增援与爆裂核心最多 1 级，延展力场和底线回响最多 3 级。
 
 ## 连击计分
 
@@ -132,6 +133,6 @@ scene.configureAutoFire({
 - **UI/成就/存档**：订阅事件总线，避免把平台能力写进物理或实体代码。
 - **多球**：物理层已经按球集合运行；主球用 `ballFactory.createPrimary()`，分裂等衍生小球只用 `ballFactory.createDerived()`。
 
-现有事件包括 `game:started`、`game:stats`、`game:lost`、`ball:launched`、`ball:loadout-changed`、`ball:split`、`ball:bounce`、`ball:lost`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
+现有事件包括 `game:started`、`game:stats`、`game:lost`、`ball:launched`、`ball:loadout-changed`、`ball:split`、`ball:exploded`、`ball:bounce`、`ball:lost`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
 
 开发控制台可通过 `window.breakout.engine` 与 `window.breakout.scene` 检查运行状态或挂载临时实验代码。

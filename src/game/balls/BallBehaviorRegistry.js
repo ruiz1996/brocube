@@ -12,6 +12,7 @@ export class BallBehaviorRegistry {
   constructor() {
     this.damageEffects = new Map();
     this.collisionPolicies = new Map();
+    this.periodicEffects = new Map();
   }
 
   registerDamageEffect(id, handler) {
@@ -23,6 +24,12 @@ export class BallBehaviorRegistry {
   registerCollisionPolicy(id, handler) {
     if (!id || this.collisionPolicies.has(id)) throw new Error(`Collision policy already exists: ${id}`);
     this.collisionPolicies.set(id, handler);
+    return this;
+  }
+
+  registerPeriodicEffect(id, handler) {
+    if (!id || this.periodicEffects.has(id)) throw new Error(`Ball periodic effect already exists: ${id}`);
+    this.periodicEffects.set(id, handler);
     return this;
   }
 
@@ -39,6 +46,12 @@ export class BallBehaviorRegistry {
   resolveCollision(policyId, context) {
     const policy = this.collisionPolicies.get(policyId) ?? this.collisionPolicies.get('bounce');
     return policy(context);
+  }
+
+  runPeriodicEffect(id, context) {
+    const effect = this.periodicEffects.get(id);
+    if (!effect) throw new Error(`Unknown ball periodic effect: ${id}`);
+    return effect(context);
   }
 }
 
@@ -78,6 +91,37 @@ export function createDefaultBallBehaviors() {
     else reflectBall(ball, contact.normal);
     scene.events.emit('ball:split', { ball, derivedBalls: created });
     return { action: 'split', derivedBalls: created };
+  });
+
+  registry.registerPeriodicEffect('area-blast', ({ scene, combat, ball, effectConfig }) => {
+    const radius = Math.max(1, effectConfig.radius ?? 120);
+    const damage = Math.max(0, effectConfig.damage ?? 1);
+    const hitBricks = [];
+    for (const brick of scene.world.all('brick')) {
+      const centerX = brick.x + brick.width / 2;
+      const centerY = brick.y + brick.height / 2;
+      if (Math.hypot(centerX - ball.x, centerY - ball.y) > radius) continue;
+      combat.applyDamage({
+        ball,
+        brick,
+        damage,
+        damageType: effectConfig.damageType ?? 'explosive',
+        cause: 'periodic-explosion',
+      });
+      hitBricks.push(brick);
+    }
+    const payload = {
+      ball,
+      x: ball.x,
+      y: ball.y,
+      radius,
+      damage,
+      hitBricks,
+      color: effectConfig.color ?? '#ff5cab',
+      secondaryColor: effectConfig.secondaryColor ?? '#9b6cff',
+    };
+    scene.events.emit('ball:exploded', payload);
+    return payload;
   });
 
   return registry;

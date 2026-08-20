@@ -107,6 +107,7 @@ test('球工厂保留特殊主球配置，但强制衍生球为基础球', () =>
     radius: 10,
     speedMultiplier: 1.2,
     damageEffects: ['chain-lightning'],
+    periodicEffects: [{ id: 'energy-pulse', interval: 2, config: { radius: 80 } }],
     collisionPolicy: 'pierce',
     collisionConfig: { remainingPierces: 3 },
     visual: { color: '#a88cff', renderer: 'orb' },
@@ -121,6 +122,8 @@ test('球工厂保留特殊主球配置，但强制衍生球为基础球', () =>
   assert.deepEqual(primary.damageEffects, [{ id: 'chain-lightning', config: {} }]);
   assert.equal(primary.collisionPolicy, 'pierce');
   assert.equal(primary.collisionState.remainingPierces, 3);
+  assert.equal(primary.periodicEffects[0].id, 'energy-pulse');
+  assert.equal(primary.periodicEffects[0].timeRemaining, 2);
 
   const derived = factory.createDerived({ x: 20, y: 30, angle: 0 });
   assert.equal(derived.definitionId, BASIC_BALL_ID);
@@ -129,6 +132,7 @@ test('球工厂保留特殊主球配置，但强制衍生球为基础球', () =>
   assert.equal(derived.damage, 1);
   assert.equal(derived.damageType, 'kinetic');
   assert.deepEqual(derived.damageEffects, []);
+  assert.deepEqual(derived.periodicEffects, []);
   assert.equal(derived.collisionPolicy, 'bounce');
   assert.deepEqual(derived.collisionConfig, {});
 });
@@ -273,6 +277,67 @@ test('天顶增援有25%概率追加一颗双倍速度的顶部球', () => {
   assert.ok(Math.abs(topSpeed / regularSpeed - GAME.upgrade.topLaunchSpeedMultiplier) < .0001);
   assert.equal(scene.world.all('particle').length, 20);
   assert.equal(scene.upgrades.options().some((option) => option.id === 'topLaunch'), false);
+  scene.exit();
+});
+
+test('爆裂核心有25%概率发射带周期范围伤害和独特外观的球', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  const launches = [];
+  const explosions = [];
+  events.on('ball:launched', (payload) => launches.push(payload));
+  events.on('ball:exploded', (payload) => explosions.push(payload));
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  scene.upgrades.waitingForChoice = true;
+  scene.upgrades.pendingChoices = 1;
+  scene.state = 'upgrading';
+  assert.equal(scene.chooseUpgrade('blastLaunch'), true);
+  assert.equal(scene.upgrades.levels.blastLaunch, 1);
+  assert.equal(scene.upgrades.blastLaunchChance, .25);
+
+  scene.autoFire.random = () => 0;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  assert.equal(launches.length, 2);
+  const blastLaunch = launches.find(({ source }) => source === 'blast-launch');
+  assert.ok(blastLaunch);
+  assert.equal(blastLaunch.emitterId, 'paddle');
+  assert.equal(blastLaunch.ball.visual.renderer, 'blast-core');
+  assert.equal(blastLaunch.ball.visual.trailLength, 12);
+  assert.equal(blastLaunch.ball.periodicEffects.length, 1);
+  assert.equal(blastLaunch.ball.periodicEffects[0].id, 'area-blast');
+
+  const target = scene.world.first('brick');
+  target.hitPoints = 10;
+  target.maxHitPoints = 10;
+  blastLaunch.ball.x = target.x + target.width / 2;
+  blastLaunch.ball.y = target.y + target.height / 2;
+  const farBrick = scene.world.all('brick').find((brick) => (
+    Math.hypot(
+      brick.x + brick.width / 2 - blastLaunch.ball.x,
+      brick.y + brick.height / 2 - blastLaunch.ball.y,
+    ) > GAME.upgrade.blastRadius + 40
+  ));
+  if (farBrick) {
+    farBrick.hitPoints = 10;
+    farBrick.maxHitPoints = 10;
+  }
+
+  scene.ballAbilities.update(GAME.upgrade.blastInterval);
+  scene.world.flush();
+  assert.equal(explosions.length, 1);
+  assert.equal(explosions[0].radius, GAME.upgrade.blastRadius);
+  assert.ok(explosions[0].hitBricks.includes(target));
+  assert.equal(target.hitPoints, 9);
+  if (farBrick) assert.equal(farBrick.hitPoints, 10);
+  assert.equal(scene.world.all('blast-wave').length, 1);
+  assert.ok(scene.world.all('particle').length >= 26);
+  assert.equal(scene.upgrades.options().some((option) => option.id === 'blastLaunch'), false);
   scene.exit();
 });
 

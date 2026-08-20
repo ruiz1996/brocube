@@ -8,6 +8,17 @@ function normalizeDamageEffect(effect) {
   return { id: effect.id, config: { ...(effect.config ?? {}) } };
 }
 
+function normalizePeriodicEffect(effect) {
+  if (!effect?.id) throw new Error('Ball periodic effect requires an id');
+  const interval = Math.max(.05, effect.interval ?? 1);
+  return {
+    id: effect.id,
+    interval,
+    initialDelay: Math.max(0, effect.initialDelay ?? interval),
+    config: { ...(effect.config ?? {}) },
+  };
+}
+
 export class BallDefinitionRegistry {
   constructor() { this.definitions = new Map(); }
 
@@ -20,6 +31,7 @@ export class BallDefinitionRegistry {
       radius: definition.radius ?? GAME.ball.radius,
       speedMultiplier: definition.speedMultiplier ?? 1,
       damageEffects: (definition.damageEffects ?? []).map(normalizeDamageEffect),
+      periodicEffects: (definition.periodicEffects ?? []).map(normalizePeriodicEffect),
       collisionPolicy: definition.collisionPolicy ?? 'bounce',
       collisionConfig: { ...(definition.collisionConfig ?? {}) },
       visual: {

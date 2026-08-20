@@ -38,6 +38,33 @@ export class AutoFireSystem {
         },
       });
     }
+    if (this.random() < this.scene.upgrades.blastLaunchChance) {
+      this.#fireBall({
+        randomized: true,
+        emitterId: 'paddle',
+        source: 'blast-launch',
+        visualOverrides: {
+          renderer: 'blast-core',
+          color: '#ff4fa3',
+          coreColor: '#fff5ff',
+          innerColor: '#d98cff',
+          trailColor: '#9b6cff',
+          trailLength: 12,
+        },
+        periodicEffects: [{
+          id: 'area-blast',
+          interval: GAME.upgrade.blastInterval,
+          initialDelay: GAME.upgrade.blastInterval,
+          config: {
+            radius: GAME.upgrade.blastRadius,
+            damage: GAME.upgrade.blastDamage,
+            damageType: 'explosive',
+            color: '#ff4fa3',
+            secondaryColor: '#9b6cff',
+          },
+        }],
+      });
+    }
     this.timeUntilShot += this.interval;
   }
 
@@ -47,6 +74,7 @@ export class AutoFireSystem {
     speedMultiplier = 1,
     source = 'automatic',
     visualOverrides = {},
+    periodicEffects = [],
   }) {
     const definition = this.scene.ballDefinitions.get(this.ballDefinitionId);
     const shot = this.scene.ballEmitters.createShot(emitterId, {
@@ -62,6 +90,7 @@ export class AutoFireSystem {
       speed: GAME.ball.speed,
       speedMultiplier: this.scene.upgrades.ballSpeedMultiplier * speedMultiplier,
       visualOverrides,
+      periodicEffects,
     });
     this.scene.world.add(ball);
     this.scene.events.emit('ball:launched', {

@@ -13,6 +13,7 @@ export class BallFactory {
     speed = GAME.ball.speed,
     speedMultiplier = 1,
     visualOverrides = {},
+    periodicEffects = [],
   }) {
     const definition = this.definitions.get(definitionId);
     return this.#create({
@@ -24,6 +25,7 @@ export class BallFactory {
       angle,
       speed: speed * speedMultiplier * definition.speedMultiplier,
       visualOverrides,
+      periodicEffects: [...definition.periodicEffects, ...periodicEffects],
     });
   }
 
@@ -40,13 +42,24 @@ export class BallFactory {
       damage: 1,
       damageType: 'kinetic',
       damageEffects: [],
+      periodicEffects: [],
       collisionPolicy: 'bounce',
       collisionConfig: {},
       visual: { ...basic.visual, trailLength: Math.min(5, basic.visual.trailLength) },
     });
   }
 
-  #create({ definition, definitionId, role, x, y, angle, speed, visualOverrides = {} }) {
+  #create({
+    definition,
+    definitionId,
+    role,
+    x,
+    y,
+    angle,
+    speed,
+    visualOverrides = {},
+    periodicEffects = [],
+  }) {
     return new Ball({
       definitionId,
       role,
@@ -60,6 +73,12 @@ export class BallFactory {
       damageEffects: definition.damageEffects.map((effect) => ({
         id: effect.id,
         config: { ...effect.config },
+      })),
+      periodicEffects: periodicEffects.map((effect) => ({
+        id: effect.id,
+        interval: effect.interval,
+        initialDelay: effect.initialDelay,
+        config: { ...(effect.config ?? {}) },
       })),
       collisionPolicy: definition.collisionPolicy,
       collisionConfig: { ...definition.collisionConfig },
