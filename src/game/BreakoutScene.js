@@ -31,14 +31,13 @@ export class BreakoutScene {
     this.ballAbilities = new BallAbilitySystem(this);
     this.ballPhysics = new BallPhysicsSystem(this);
     this.brickField = new BrickFieldSystem(this);
-    this.effects = new EffectsSystem(this);
     this.systems = [
       new PaddleSystem(this),
       this.autoFire,
       this.ballPhysics,
       this.ballAbilities,
       this.brickField,
-      this.effects,
+      new EffectsSystem(this),
     ];
     this.score = 0;
     this.state = 'idle';

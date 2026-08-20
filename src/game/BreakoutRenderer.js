@@ -6,23 +6,11 @@ export class BreakoutRenderer {
   render(ctx) {
     this.#background(ctx);
     const { world } = this.scene;
-    const shake = this.scene.effects?.shake ?? 0;
-    ctx.save();
-    if (shake > 0) {
-      ctx.translate(
-        (Math.random() - .5) * shake * 2,
-        (Math.random() - .5) * shake * 2,
-      );
-    }
     for (const brick of world.all('brick')) this.#brick(ctx, brick);
     for (const wave of world.all('blast-wave')) this.#blastWave(ctx, wave);
-    for (const wave of world.all('impact-wave')) this.#impactWave(ctx, wave);
-    for (const shard of world.all('brick-shard')) this.#brickShard(ctx, shard);
     for (const particle of world.all('particle')) this.#particle(ctx, particle);
     for (const paddle of world.all('paddle')) this.#paddle(ctx, paddle);
     for (const ball of world.all('ball')) this.#ball(ctx, ball);
-    ctx.restore();
-    this.#screenFlash(ctx);
   }
 
   #background(ctx) {
@@ -127,95 +115,10 @@ export class BreakoutRenderer {
   #particle(ctx, particle) {
     ctx.save();
     ctx.globalAlpha = Math.max(0, particle.life / particle.maxLife);
+    ctx.fillStyle = particle.color;
     ctx.shadowColor = particle.color;
-    ctx.shadowBlur = particle.style === 'streak' ? 7 : 4;
-    if (particle.style === 'streak') {
-      const speed = Math.hypot(particle.velocityX, particle.velocityY) || 1;
-      const directionX = particle.velocityX / speed;
-      const directionY = particle.velocityY / speed;
-      ctx.strokeStyle = particle.color;
-      ctx.lineWidth = particle.size;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(particle.x, particle.y);
-      ctx.lineTo(
-        particle.x - directionX * particle.length,
-        particle.y - directionY * particle.length,
-      );
-      ctx.stroke();
-    } else {
-      ctx.fillStyle = particle.color;
-      ctx.fillRect(particle.x - particle.size / 2, particle.y - particle.size / 2, particle.size, particle.size);
-    }
-    ctx.restore();
-  }
-
-  #impactWave(ctx, wave) {
-    const progress = Math.max(0, Math.min(1, 1 - wave.life / wave.maxLife));
-    const eased = 1 - (1 - progress) ** 3;
-    const radius = wave.startRadius + (wave.radius - wave.startRadius) * eased;
-    const alpha = (1 - progress) ** 1.35;
-    ctx.save();
-    ctx.translate(wave.x, wave.y);
-    ctx.rotate(progress * (wave.variant === 'kill' ? 1.4 : .45));
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = alpha;
-    ctx.shadowColor = wave.color;
-    ctx.shadowBlur = wave.variant === 'kill' ? 14 : 8;
-    ctx.strokeStyle = wave.color;
-    ctx.lineWidth = wave.variant === 'kill' ? 3.5 - progress * 2 : 2.4 - progress;
-    ctx.beginPath();
-    ctx.arc(0, 0, radius, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.strokeStyle = wave.secondaryColor;
-    ctx.lineWidth = 1;
-    ctx.setLineDash(wave.variant === 'kill' ? [8, 7] : [3, 5]);
-    ctx.beginPath();
-    ctx.arc(0, 0, radius * (wave.variant === 'kill' ? .72 : .58), 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    const rayCount = wave.variant === 'kill' ? 6 : 4;
-    ctx.lineWidth = wave.variant === 'kill' ? 2 : 1.2;
-    for (let index = 0; index < rayCount; index += 1) {
-      const angle = index / rayCount * Math.PI * 2;
-      const inner = radius * .72;
-      const outer = radius * (wave.variant === 'kill' ? 1.18 : 1.08);
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
-      ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  #brickShard(ctx, shard) {
-    const alpha = Math.max(0, shard.life / shard.maxLife);
-    ctx.save();
-    ctx.translate(shard.x, shard.y);
-    ctx.rotate(shard.rotation);
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = shard.color;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = .8;
-    ctx.shadowColor = shard.color;
-    ctx.shadowBlur = 6;
-    this.#polygonPath(ctx, shard.points);
-    ctx.fill();
-    ctx.globalAlpha = alpha * .9;
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  #screenFlash(ctx) {
-    const flash = this.scene.effects?.flash ?? 0;
-    if (flash <= 0) return;
-    ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-    ctx.globalAlpha = flash;
-    ctx.fillStyle = this.scene.effects.flashColor;
-    ctx.fillRect(0, GAME.playTop, GAME.width, GAME.playBottom - GAME.playTop);
+    ctx.shadowBlur = 7;
+    ctx.fillRect(particle.x - particle.size / 2, particle.y - particle.size / 2, particle.size, particle.size);
     ctx.restore();
   }
 
