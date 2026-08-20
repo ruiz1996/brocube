@@ -59,19 +59,30 @@ export class BrickFieldSystem {
     this.elapsed = 0;
     this.spawnTimer = 1;
     this.breached = false;
+    this.nextBossWave = GAME.brick.bossWaveInterval;
   }
 
   reset() {
     this.elapsed = 0;
     this.spawnTimer = 1.4;
     this.breached = false;
+    this.nextBossWave = GAME.brick.bossWaveInterval;
     const lanes = [1, 3, 5, 7, 2, 6, 4];
     lanes.forEach((lane, index) => this.#spawnBrick(lane, 92 + Math.floor(index / 3) * 80 + Math.random() * 20));
   }
 
   update(dt) {
     this.elapsed += dt;
-    const speed = Math.min(GAME.brick.maxSpeed, GAME.brick.initialSpeed + this.elapsed * .14);
+    if (this.scene.world.all('brick').length === 0) {
+      this.#spawnClearRefillRow();
+      this.spawnTimer = GAME.brick.initialSpawnInterval;
+      return;
+    }
+
+    const speed = Math.min(
+      GAME.brick.maxSpeed,
+      GAME.brick.initialSpeed + this.elapsed * GAME.brick.speedGrowthPerSecond,
+    );
     for (const brick of this.scene.world.all('brick')) {
       brick.y += speed * dt;
       if (!this.breached && brick.bottom() >= GAME.playBottom) {
@@ -79,6 +90,12 @@ export class BrickFieldSystem {
         this.scene.events.emit('brick:breached', { brick, elapsed: this.elapsed });
         return;
       }
+    }
+
+    if (this.elapsed >= this.nextBossWave) {
+      while (this.nextBossWave <= this.elapsed) this.nextBossWave += GAME.brick.bossWaveInterval;
+      this.#spawnBossWave();
+      this.spawnTimer = Math.max(this.spawnTimer, GAME.brick.initialSpawnInterval * .7);
     }
 
     this.spawnTimer -= dt;
@@ -102,21 +119,79 @@ export class BrickFieldSystem {
     }
   }
 
-  #spawnBrick(lane, y) {
-    const laneWidth = (GAME.width - 34) / 9;
-    const width = randomBetween(GAME.brick.minWidth, GAME.brick.maxWidth);
-    const height = randomBetween(GAME.brick.minHeight, GAME.brick.maxHeight);
-    const x = 17 + lane * laneWidth + (laneWidth - width) / 2 + randomBetween(-8, 8);
-    const hitPoints = selectBrickHitPoints({
+  #spawnClearRefillRow() {
+    const laneWidth = (GAME.width - 34) / GAME.brick.clearRefillCount;
+    const bricks = [];
+    for (let lane = 0; lane < GAME.brick.clearRefillCount; lane += 1) {
+      const width = randomBetween(GAME.brick.minWidth * .78, Math.min(GAME.brick.maxWidth * .82, laneWidth - 14));
+      const height = randomBetween(GAME.brick.minHeight * .8, GAME.brick.maxHeight * .82);
+      bricks.push(this.#spawnBrick(lane, GAME.playTop + 13, {
+        laneCount: GAME.brick.clearRefillCount,
+        width,
+        height,
+        horizontalJitter: 2,
+      }));
+    }
+    this.scene.events.emit('brick:wave-refilled', { bricks, elapsed: this.elapsed });
+  }
+
+  #spawnBossWave() {
+    const expectedHp = calculateExpectedBrickHitPoints({
       elapsed: this.elapsed,
       score: this.scene.score,
     });
-    this.scene.world.add(new Brick({
+    const hitPoints = Math.max(1, Math.ceil(expectedHp * GAME.brick.bossHealthMultiplier));
+    const width = GAME.brick.bossWidth;
+    const height = GAME.brick.bossHeight;
+    const boss = this.#spawnBrick(4, GAME.playTop + 16, {
+      width,
+      height,
+      x: (GAME.width - width) / 2,
+      hitPoints,
+      color: '#ff3f8f',
+      score: 100 * hitPoints * GAME.brick.bossScoreMultiplier,
+      variant: 'boss',
+    });
+
+    const minionLanes = [0, 1, 7, 8, 2, 6];
+    const minions = [];
+    for (let index = 0; index < GAME.brick.bossMinionCount; index += 1) {
+      const lane = minionLanes[index % minionLanes.length];
+      const secondRow = index >= 4;
+      minions.push(this.#spawnBrick(lane, GAME.playTop + (secondRow ? 102 : 20), {
+        width: randomBetween(GAME.brick.minWidth * .68, GAME.brick.minWidth * .88),
+        height: randomBetween(GAME.brick.minHeight * .68, GAME.brick.minHeight * .9),
+        horizontalJitter: 2,
+        color: index % 2 === 0 ? '#9b6cff' : '#ff5cab',
+        variant: 'boss-minion',
+      }));
+    }
+    this.scene.events.emit('boss:wave', {
+      boss,
+      minions,
+      wave: Math.floor(this.elapsed / GAME.brick.bossWaveInterval),
+      elapsed: this.elapsed,
+    });
+  }
+
+  #spawnBrick(lane, y, options = {}) {
+    const laneCount = options.laneCount ?? 9;
+    const laneWidth = (GAME.width - 34) / laneCount;
+    const width = options.width ?? randomBetween(GAME.brick.minWidth, GAME.brick.maxWidth);
+    const height = options.height ?? randomBetween(GAME.brick.minHeight, GAME.brick.maxHeight);
+    const horizontalJitter = options.horizontalJitter ?? 8;
+    const x = options.x ?? 17 + lane * laneWidth + (laneWidth - width) / 2 + randomBetween(-horizontalJitter, horizontalJitter);
+    const hitPoints = options.hitPoints ?? selectBrickHitPoints({
+      elapsed: this.elapsed,
+      score: this.scene.score,
+    });
+    return this.scene.world.add(new Brick({
       x, y, width, height,
       points: randomPolygon(width, height),
       hitPoints,
-      color: PALETTE[Math.floor(Math.random() * PALETTE.length)],
-      score: 100 * hitPoints,
+      color: options.color ?? PALETTE[Math.floor(Math.random() * PALETTE.length)],
+      score: options.score ?? 100 * hitPoints,
+      variant: options.variant ?? 'normal',
     }));
   }
 }

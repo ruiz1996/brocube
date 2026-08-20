@@ -6,6 +6,7 @@ import { GameEngine } from '../src/core/GameEngine.js';
 import { BreakoutScene } from '../src/game/BreakoutScene.js';
 import { GAME } from '../src/game/config.js';
 import { calculateExpectedBrickHitPoints, selectBrickHitPoints } from '../src/game/systems/BrickFieldSystem.js';
+import { calculateUpgradeScoreCost } from '../src/game/systems/UpgradeSystem.js';
 import { ComboPlugin } from '../src/game/plugins/ComboPlugin.js';
 import { BASIC_BALL_ID, createDefaultBallDefinitions } from '../src/game/balls/BallDefinitionRegistry.js';
 import { BallFactory } from '../src/game/balls/BallFactory.js';
@@ -86,7 +87,7 @@ test('生存玩法可自动发球、击毁多边形且落球不结束游戏', ()
   assert.ok(scene.score >= 100);
   assert.equal(brick.active, false);
 
-  ball.y = 700;
+  ball.y = GAME.playBottom + 100;
   ball.velocityY = 100;
   scene.update(1 / 120);
   assert.equal(scene.state, 'playing');
@@ -362,6 +363,90 @@ test('方块血量按可调公式随时间和分数无上限增长', () => {
   );
 });
 
+test('每三分钟生成包含Boss和小方块的Boss波次', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  const waves = [];
+  events.on('boss:wave', (payload) => waves.push(payload));
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  scene.brickField.elapsed = GAME.brick.bossWaveInterval - .01;
+  scene.brickField.nextBossWave = GAME.brick.bossWaveInterval;
+  scene.brickField.update(.02);
+  scene.world.flush();
+
+  const bosses = scene.world.all('brick').filter((brick) => brick.variant === 'boss');
+  const minions = scene.world.all('brick').filter((brick) => brick.variant === 'boss-minion');
+  assert.equal(waves.length, 1);
+  assert.equal(bosses.length, 1);
+  assert.equal(minions.length, GAME.brick.bossMinionCount);
+  assert.equal(waves[0].wave, 1);
+  assert.ok(bosses[0].maxHitPoints > Math.max(...minions.map((brick) => brick.maxHitPoints)));
+  assert.ok(bosses[0].width > Math.max(...minions.map((brick) => brick.width)));
+  scene.exit();
+});
+
+test('场上方块清空后立即在顶部补充一整排', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  let refill = null;
+  events.on('brick:wave-refilled', (payload) => { refill = payload; });
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  for (const brick of scene.world.all('brick')) brick.destroy();
+  scene.world.flush();
+  scene.brickField.update(1 / 120);
+  scene.world.flush();
+
+  const bricks = scene.world.all('brick');
+  assert.equal(bricks.length, GAME.brick.clearRefillCount);
+  assert.equal(refill.bricks.length, GAME.brick.clearRefillCount);
+  assert.ok(bricks.every((brick) => brick.y <= GAME.playTop + 14));
+  assert.equal(scene.brickField.spawnTimer, GAME.brick.initialSpawnInterval);
+  scene.exit();
+});
+
+test('强化所需分数随已获得强化次数持续增加', () => {
+  const firstCost = calculateUpgradeScoreCost(0);
+  const secondCost = calculateUpgradeScoreCost(1);
+  const tenthCost = calculateUpgradeScoreCost(9);
+  assert.equal(firstCost, GAME.upgrade.scoreInterval);
+  assert.ok(secondCost > firstCost);
+  assert.ok(tenthCost > secondCost * 2);
+});
+
+test('范围伤害跨过强化阈值后，同次多杀仍会完整计分', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  scene.score = GAME.upgrade.scoreInterval - 100;
+  const [first, second] = scene.world.all('brick');
+  first.hitPoints = 1;
+  first.score = 100;
+  second.hitPoints = 1;
+  second.score = 100;
+  const ball = scene.ballFactory.createPrimary({ x: first.x, y: first.y, angle: 0 });
+
+  scene.ballCombat.applyDamage({ ball, brick: first, damage: 1, cause: 'test-area' });
+  assert.equal(scene.state, 'upgrading');
+  scene.ballCombat.applyDamage({ ball, brick: second, damage: 1, cause: 'test-area' });
+  assert.equal(scene.score, GAME.upgrade.scoreInterval + 100);
+  scene.exit();
+});
+
 test('分数强化可以重复选择并作用于发球和场上球', () => {
   const events = new EventBus();
   const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
@@ -373,13 +458,13 @@ test('分数强化可以重复选择并作用于发球和场上球', () => {
   scene.startNewGame();
   for (let index = 0; index < 40; index += 1) scene.update(1 / 120);
 
-  scene.upgrades.check(GAME.upgrade.scoreInterval);
+  scene.upgrades.check(scene.upgrades.nextScore);
   assert.equal(scene.state, 'upgrading');
   assert.equal(scene.chooseUpgrade('rapidFire'), true);
   assert.equal(scene.upgrades.levels.rapidFire, 1);
   assert.ok(scene.autoFire.interval < GAME.autoFireInterval);
 
-  scene.upgrades.check(GAME.upgrade.scoreInterval * 2);
+  scene.upgrades.check(scene.upgrades.nextScore);
   scene.chooseUpgrade('multiShot');
   assert.equal(scene.upgrades.levels.multiShot, 1);
   const ballCount = scene.world.all('ball').length;
@@ -390,12 +475,12 @@ test('分数强化可以重复选择并作用于发球和场上球', () => {
 
   const ball = scene.world.first('ball');
   const speedBefore = Math.hypot(ball.velocityX, ball.velocityY);
-  scene.upgrades.check(GAME.upgrade.scoreInterval * 3);
+  scene.upgrades.check(scene.upgrades.nextScore);
   scene.chooseUpgrade('ballSpeed');
   const speedAfter = Math.hypot(ball.velocityX, ball.velocityY);
   assert.ok(Math.abs(speedAfter / speedBefore - GAME.upgrade.ballSpeedMultiplierPerLevel) < .0001);
 
-  scene.upgrades.check(GAME.upgrade.scoreInterval * 4);
+  scene.upgrades.check(scene.upgrades.nextScore);
   scene.chooseUpgrade('rapidFire');
   assert.equal(scene.upgrades.levels.rapidFire, 2);
   scene.exit();
@@ -455,12 +540,12 @@ test('连续三秒内击杀形成连击倍率，超时后清零', () => {
   assert.equal(ComboPlugin.scoreMultiplier(), 1);
   events.emit('brick:destroyed');
   assert.equal(ComboPlugin.combo, 2);
-  assert.equal(ComboPlugin.scoreMultiplier(), 1.25);
+  assert.ok(Math.abs(ComboPlugin.scoreMultiplier() - 1.1) < .0001);
 
   ComboPlugin.afterUpdate(2.9, context);
   events.emit('brick:destroyed');
   assert.equal(ComboPlugin.combo, 3);
-  assert.equal(ComboPlugin.scoreMultiplier(), 1.5);
+  assert.ok(Math.abs(ComboPlugin.scoreMultiplier() - 1.2) < .0001);
 
   ComboPlugin.afterUpdate(3.01, context);
   assert.equal(ComboPlugin.combo, 0);

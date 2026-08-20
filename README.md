@@ -1,6 +1,8 @@
 # Neon Breaker
 
-一个零依赖、可扩展的 Canvas 无限生存打方块游戏。挡板每 5 秒自动发射能量球；球掉出底部会被回收，但不会导致失败。随机凸多边形方块会持续生成并缓慢下压，任意方块触碰底部防线即游戏结束。
+一个零依赖、可扩展的 Canvas 无限生存打方块游戏。游戏采用 600×900 的竖向战场，适配手机竖屏并保留桌面键盘操作。挡板每 5 秒自动发射能量球；球掉出底部会被回收，但不会导致失败。随机凸多边形方块会持续生成并缓慢下压，任意方块触碰底部防线即游戏结束。
+
+每存活 3 分钟会生成一轮 Boss 波次，其中包含 1 个大型高血量 Boss 与 6 个小型护卫方块；范围伤害可以同时处理护卫并削减 Boss。若场上方块被全部清空，系统会立即在顶部补充一整排 9 个方块，保证战斗不会出现空档。
 
 在线游玩：<https://ruiz1996.github.io/brocube/>
 
@@ -112,7 +114,14 @@ scene.configureAutoFire({
 
 ## 强化系统
 
-每累计 `GAME.upgrade.scoreInterval` 分（默认 2000 分）会冻结战场并弹出一次强化选择。阈值可以连续跨越，多出来的选择会排队，不会丢失。每次从尚未满级的强化池中随机抽取 3 项且不会重复。
+第一次累计 `GAME.upgrade.scoreInterval` 分（默认 2000 分）会冻结战场并弹出强化选择，此后每次强化需要的新增分数会随已获得强化次数增长。阈值可以连续跨越，多出来的选择会排队，不会丢失。每次从尚未满级的强化池中随机抽取 3 项且不会重复。
+
+```text
+第 n 次强化所需新增分数 = scoreInterval
+                        × (1 + scoreGrowthCoefficient × n ^ scoreGrowthExponent)
+```
+
+结果会按 `scoreCostRounding` 取整。默认成长系数为 `0.18`、指数为 `1.25`，可以在 `config.js` 中调整；因此强化间隔会持续拉长，不会在高分阶段连续遮挡战场。
 
 - **高速装填**：发射间隔每级乘以 `rapidFireMultiplier`，最低不会小于 `minimumFireInterval`。
 - **分裂发射**：每级增加额外生成一颗球的概率；概率按 `1 - (1 - extraBallChancePerLevel) ^ 等级` 叠加。选择一级后，新球改为向上半场随机角度发射。
@@ -126,13 +135,13 @@ scene.configureAutoFire({
 
 ## 连击计分
 
-击杀方块后会开启 3 秒连击窗口，每次后续击杀都会刷新窗口。第一杀为基础分，第二杀起每次连击增加 0.25 倍得分，默认最高 5 倍。窗口时长、每杀倍率和倍率上限位于 `config.js` 的 `GAME.combo`。
+击杀方块后会开启 3 秒连击窗口，每次后续击杀都会刷新窗口。第一杀为基础分，第二杀起每次连击增加 0.1 倍得分，默认最高 3 倍。窗口时长、每杀倍率和倍率上限位于 `config.js` 的 `GAME.combo`。
 - **新道具/敌人**：新增 Entity 和 System，在 `BreakoutScene.systems` 注册；不需要改动引擎循环。
 - **新模式**：新增 Scene，实现 `enter / update / render / exit`，交给 `engine.setScene()`。
 - **跨玩法模块**：使用插件。插件可实现 `install(context)`、`beforeUpdate(dt)`、`afterUpdate(dt)`、`afterRender(ctx)`、`dispose()`。
 - **UI/成就/存档**：订阅事件总线，避免把平台能力写进物理或实体代码。
 - **多球**：物理层已经按球集合运行；主球用 `ballFactory.createPrimary()`，分裂等衍生小球只用 `ballFactory.createDerived()`。
 
-现有事件包括 `game:started`、`game:stats`、`game:lost`、`ball:launched`、`ball:loadout-changed`、`ball:split`、`ball:exploded`、`ball:bounce`、`ball:lost`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
+现有事件包括 `game:started`、`game:stats`、`game:lost`、`ball:launched`、`ball:loadout-changed`、`ball:split`、`ball:exploded`、`ball:bounce`、`ball:lost`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`brick:wave-refilled`、`boss:wave`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
 
 开发控制台可通过 `window.breakout.engine` 与 `window.breakout.scene` 检查运行状态或挂载临时实验代码。

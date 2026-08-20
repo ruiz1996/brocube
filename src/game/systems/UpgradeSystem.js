@@ -10,6 +10,15 @@ const UPGRADE_IDS = [
   'bottomBounce',
 ];
 
+export function calculateUpgradeScoreCost(upgradeIndex, config = GAME.upgrade) {
+  const index = Math.max(0, upgradeIndex);
+  const rawCost = config.scoreInterval * (
+    1 + config.scoreGrowthCoefficient * index ** config.scoreGrowthExponent
+  );
+  const rounding = Math.max(1, config.scoreCostRounding);
+  return Math.max(rounding, Math.round(rawCost / rounding) * rounding);
+}
+
 export class UpgradeSystem {
   constructor(scene) {
     this.scene = scene;
@@ -27,7 +36,8 @@ export class UpgradeSystem {
       paddleLength: 0,
       bottomBounce: 0,
     };
-    this.nextScore = GAME.upgrade.scoreInterval;
+    this.earnedChoices = 0;
+    this.nextScore = calculateUpgradeScoreCost(0);
     this.pendingChoices = 0;
     this.waitingForChoice = false;
   }
@@ -65,7 +75,8 @@ export class UpgradeSystem {
   check(score) {
     while (score >= this.nextScore) {
       this.pendingChoices += 1;
-      this.nextScore += GAME.upgrade.scoreInterval;
+      this.earnedChoices += 1;
+      this.nextScore += calculateUpgradeScoreCost(this.earnedChoices);
     }
     if (this.pendingChoices > 0 && !this.waitingForChoice) this.#offer();
   }
@@ -102,6 +113,7 @@ export class UpgradeSystem {
       id,
       levels: { ...this.levels },
       pendingChoices: this.pendingChoices,
+      nextScore: this.nextScore,
     });
 
     if (this.pendingChoices > 0) this.#offer();
@@ -173,6 +185,7 @@ export class UpgradeSystem {
       options: this.options(),
       levels: { ...this.levels },
       pendingChoices: this.pendingChoices,
+      nextScore: this.nextScore,
     });
   }
 }

@@ -14,7 +14,7 @@
 
 * { box-sizing: border-box; }
 
-html, body { min-height: 100%; }
+html, body { min-height: 100%; min-height: 100svh; }
 
 body {
   margin: 0;
@@ -40,7 +40,7 @@ body::before {
 button { font: inherit; }
 
 .app-shell {
-  width: min(1160px, calc(100% - 32px));
+  width: min(620px, calc(100% - 32px));
   margin: 0 auto;
   padding: 28px 0 34px;
 }
@@ -122,8 +122,8 @@ button { font: inherit; }
 .lives { display: flex; height: 21px; align-items: center; gap: 8px; }
 .life-icon { width: 16px; height: 8px; border-radius: 3px 3px 8px 8px; background: var(--cyan); box-shadow: 0 0 10px rgba(85,232,255,.55); transform: perspective(10px) rotateX(-8deg); }
 
-.stage { position: relative; width: 100%; aspect-ratio: 16 / 9.1; min-height: 360px; background: #070b18; }
-#game-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.stage { position: relative; width: 100%; aspect-ratio: 2 / 3; min-height: 0; background: #070b18; }
+#game-canvas { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; }
 
 .combo-indicator {
   position: absolute;
@@ -259,6 +259,8 @@ button { font: inherit; }
   font-size: 11px;
 }
 
+.touch-control { display: none; }
+
 kbd {
   display: inline-grid;
   min-width: 23px;
@@ -277,16 +279,41 @@ kbd {
 .tip { margin: 18px 0 0; color: #596580; text-align: center; font-size: 11px; }
 .tip span { margin-right: 8px; color: var(--violet); font: 700 9px 'Space Mono', monospace; letter-spacing: .15em; }
 
+@media (min-width: 681px) {
+  .app-shell {
+    width: min(calc(100% - 32px), clamp(400px, calc(66.667svh - 148px), 620px));
+    padding-top: 10px;
+    padding-bottom: 16px;
+  }
+  .brand-bar { margin-bottom: 10px; }
+  .status-bar { height: 64px; }
+  .control-bar { min-height: 48px; }
+  .tip { margin-top: 8px; }
+}
+
 @media (max-width: 680px) {
-  .app-shell { width: min(100% - 16px, 1160px); padding-top: 14px; }
+  .app-shell {
+    width: min(100% - 12px, 620px);
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+  }
   .brand-bar { margin: 0 8px 13px; }
+  .brand { font-size: 14px; }
+  .brand-mark { width: 24px; height: 24px; }
+  .icon-button { width: 35px; height: 35px; }
   .game-card { border-radius: 12px; }
-  .status-bar { height: 62px; padding: 0 17px; }
+  .status-bar { height: 58px; padding: 0 14px; }
   .status-center { min-width: 70px; }
+  .status-label { font-size: 8px; letter-spacing: .12em; }
   .status-item strong { font-size: 16px; }
-  .stage { min-height: 330px; aspect-ratio: auto; }
-  .control-bar { gap: 12px; }
-  .control-bar span:nth-child(3) { display: none; }
+  .stage { min-height: 0; aspect-ratio: 2 / 3; }
+  .game-overlay { padding: 20px; }
+  .game-overlay h1 { font-size: clamp(30px, 10vw, 42px); }
+  .game-overlay > p:nth-of-type(2) { margin: 14px 0 21px; font-size: 13px; }
+  .control-bar { min-height: 48px; gap: 10px 16px; padding: 9px 12px; }
+  .desktop-control { display: none; }
+  .touch-control { display: inline; color: #8d99b5; }
+  .control-bar span:last-child { display: none; }
   .upgrade-overlay { padding: 16px; justify-content: flex-start; overflow-y: auto; }
   .upgrade-overlay h2 { margin-top: 3px; }
   .upgrade-copy { margin-bottom: 12px; }
@@ -294,6 +321,17 @@ kbd {
   .upgrade-card { min-height: 105px; padding: 13px; }
   .upgrade-name { margin-top: 7px; }
   .upgrade-action { padding-top: 8px; }
+}
+
+@media (max-width: 380px) {
+  .status-bar { padding: 0 10px; }
+  .status-center { min-width: 58px; }
+  .status-item strong { font-size: 14px; }
+  .upgrade-overlay { padding: 12px; }
+  .upgrade-copy { font-size: 11px; }
+  .upgrade-card { min-height: 96px; padding: 11px; }
+  .upgrade-description { margin-top: 6px; line-height: 1.42; }
+  .tip { margin-top: 12px; padding: 0 8px; line-height: 1.5; }
 }
 
 @media (prefers-reduced-motion: reduce) {

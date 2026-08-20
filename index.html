@@ -41,7 +41,7 @@
         </div>
 
         <div id="stage" class="stage">
-          <canvas id="game-canvas" width="960" height="600" aria-label="游戏画布"></canvas>
+          <canvas id="game-canvas" width="600" height="900" aria-label="竖向打方块游戏画布"></canvas>
           <div id="combo-indicator" class="combo-indicator is-hidden" aria-live="polite">
             <span id="combo-count" class="combo-count">2 COMBO</span>
             <span id="combo-multiplier" class="combo-multiplier">×1.25 SCORE</span>
@@ -65,7 +65,8 @@
         </div>
 
         <footer class="control-bar">
-          <span><kbd>A</kbd><kbd>D</kbd> 或 <kbd>←</kbd><kbd>→</kbd> 移动</span>
+          <span class="desktop-control"><kbd>A</kbd><kbd>D</kbd> 或 <kbd>←</kbd><kbd>→</kbd> 移动</span>
+          <span class="touch-control">在游戏区域左右拖动控制挡板</span>
           <span>每 <kbd>5 SEC</kbd> 自动发射</span>
           <span><kbd>P</kbd> 暂停</span>
         </footer>

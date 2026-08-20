@@ -94,6 +94,8 @@ export class BreakoutScene {
       nextShot: Math.max(0, this.autoFire?.timeUntilShot ?? 0),
       elapsed: this.brickField?.elapsed ?? 0,
       upgrades: { ...this.upgrades.levels },
+      nextUpgradeScore: this.upgrades.nextScore,
+      earnedUpgradeChoices: this.upgrades.earnedChoices,
       state: this.state,
     };
   }
@@ -108,7 +110,7 @@ export class BreakoutScene {
   }
 
   #onBrickDestroyed({ brick }) {
-    if (this.state !== 'playing') return;
+    if (!['playing', 'upgrading'].includes(this.state)) return;
     const comboPlugin = this.plugins.plugins.get('combo-score');
     const multiplier = comboPlugin?.scoreMultiplier?.() ?? 1;
     this.score += brick.score * multiplier;

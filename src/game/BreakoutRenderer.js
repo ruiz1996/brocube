@@ -56,6 +56,17 @@ export class BreakoutRenderer {
     this.#polygonPath(ctx, points);
     ctx.stroke();
 
+    if (brick.variant === 'boss') {
+      ctx.shadowColor = '#fff0f7';
+      ctx.shadowBlur = 18;
+      ctx.strokeStyle = 'rgba(255, 240, 247, .82)';
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([8, 5]);
+      this.#polygonPath(ctx, points);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     ctx.shadowBlur = 12;
     ctx.fillStyle = brick.color;
     const digits = String(brick.hitPoints).length;
@@ -64,7 +75,16 @@ export class BreakoutRenderer {
     ctx.font = `700 ${fontSize}px "Space Mono", monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(String(brick.hitPoints), centerX, centerY + 1);
+    if (brick.variant === 'boss') {
+      ctx.font = '700 10px "Space Mono", monospace';
+      ctx.fillStyle = '#fff0f7';
+      ctx.fillText('BOSS', centerX, centerY - 17);
+      ctx.font = `700 ${fontSize}px "Space Mono", monospace`;
+      ctx.fillStyle = brick.color;
+      ctx.fillText(String(brick.hitPoints), centerX, centerY + 9);
+    } else {
+      ctx.fillText(String(brick.hitPoints), centerX, centerY + 1);
+    }
     ctx.restore();
   }
 

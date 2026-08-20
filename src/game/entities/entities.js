@@ -70,7 +70,7 @@ export class Ball extends Entity {
 }
 
 export class Brick extends Entity {
-  constructor({ x, y, width, height, points, hitPoints = 1, color, score = 100 }) {
+  constructor({ x, y, width, height, points, hitPoints = 1, color, score = 100, variant = 'normal' }) {
     super('brick', {
       tags: ['collidable', 'breakable'],
       x, y, width, height,
@@ -79,6 +79,7 @@ export class Brick extends Entity {
         { x: width, y: height }, { x: 0, y: height },
       ],
       hitPoints, maxHitPoints: hitPoints, color, score,
+      variant,
       hitFlash: 0,
     });
   }
