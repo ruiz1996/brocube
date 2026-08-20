@@ -39,7 +39,7 @@ export const GAME = Object.freeze({
     blastDamage: 1,
     ballSpeedMultiplierPerLevel: 1.12,
     paddleLengthMultiplierPerLevel: 1.2,
-    paddleLengthMaxLevel: 3,
+    paddleLengthMaxLevel: 5,
     bottomBounceChancePerLevel: 0.2,
     bottomBounceMaxLevel: 3,
     randomLaunchMinAngle: 0.35,

@@ -3,6 +3,7 @@ import test from 'node:test';
 import { EventBus } from '../src/core/EventBus.js';
 import { Entity, World } from '../src/core/Entity.js';
 import { GameEngine } from '../src/core/GameEngine.js';
+import { InputManager, mapPointerToElement } from '../src/core/InputManager.js';
 import { BreakoutScene } from '../src/game/BreakoutScene.js';
 import { GAME } from '../src/game/config.js';
 import {
@@ -57,6 +58,65 @@ test('GameEngine 可以完成浏览器环境初始化', () => {
   assert.equal(engine.width, 960);
   assert.equal(engine.height, 600);
   assert.equal(engine.running, false);
+});
+
+test('画布下方触控坐标按画布宽度映射并限制在游戏范围内', () => {
+  const canvas = {
+    width: 600,
+    height: 900,
+    getBoundingClientRect() {
+      return { left: 10, top: 100, width: 400, height: 600 };
+    },
+  };
+  assert.deepEqual(
+    mapPointerToElement({ clientX: 210, clientY: 760 }, canvas),
+    { x: 300, y: 900 },
+  );
+  assert.deepEqual(
+    mapPointerToElement({ clientX: -50, clientY: 50 }, canvas),
+    { x: 0, y: 0 },
+  );
+});
+
+test('提示区域支持触摸拖动、指针捕获并在松手后停止控制', () => {
+  globalThis.window = { addEventListener() {} };
+  const createTarget = (bounds, dimensions = {}) => ({
+    ...dimensions,
+    listeners: new Map(),
+    addEventListener(type, listener) { this.listeners.set(type, listener); },
+    getBoundingClientRect() { return bounds; },
+    setPointerCapture(pointerId) { this.capturedPointer = pointerId; },
+  });
+  const canvas = createTarget(
+    { left: 20, top: 100, width: 400, height: 600 },
+    { width: 600, height: 900 },
+  );
+  const tip = createTarget({ left: 20, top: 760, width: 400, height: 44 });
+  const input = new InputManager({ coordinateElement: canvas, pointerTargets: [canvas, tip] });
+  let prevented = 0;
+  const touchEvent = (clientX, type = 'touch') => ({
+    clientX,
+    clientY: 782,
+    pointerId: 7,
+    pointerType: type,
+    preventDefault() { prevented += 1; },
+  });
+
+  tip.listeners.get('pointerdown')(touchEvent(120));
+  assert.equal(input.pointer.x, 150);
+  assert.equal(input.pointer.y, 900);
+  assert.equal(input.pointer.active, true);
+  assert.equal(input.pointer.justPressed, true);
+  assert.equal(tip.capturedPointer, 7);
+
+  tip.listeners.get('pointermove')(touchEvent(360));
+  assert.equal(input.pointer.x, 510);
+  assert.equal(prevented, 2);
+
+  tip.listeners.get('pointermove')(touchEvent(220, 'mouse'));
+  assert.equal(input.pointer.x, 510);
+  tip.listeners.get('pointerup')();
+  assert.equal(input.pointer.active, false);
 });
 
 test('生存玩法可自动发球、击毁多边形且落球不结束游戏', () => {
@@ -671,15 +731,46 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
     assert.equal(scene.chooseUpgrade(id), true);
   };
 
-  for (let level = 0; level < 3; level += 1) chooseDirectly('paddleLength');
+  for (let level = 0; level < GAME.upgrade.paddleLengthMaxLevel; level += 1) {
+    chooseDirectly('paddleLength');
+  }
   const paddle = scene.world.first('paddle');
-  const expectedWidth = GAME.paddle.width * GAME.upgrade.paddleLengthMultiplierPerLevel ** 3;
+  const expectedWidth = GAME.paddle.width
+    * GAME.upgrade.paddleLengthMultiplierPerLevel ** GAME.upgrade.paddleLengthMaxLevel;
   assert.ok(Math.abs(paddle.width - expectedWidth) < .0001);
-  assert.equal(scene.upgrades.options().some((option) => option.id === 'paddleLength'), false);
+  assert.equal(scene.upgrades.levels.paddleLength, 5);
+  assert.equal(scene.upgrades.isAvailable('paddleLength'), false);
 
-  for (let level = 0; level < 3; level += 1) chooseDirectly('bottomBounce');
+  for (let level = 0; level < GAME.upgrade.bottomBounceMaxLevel; level += 1) {
+    chooseDirectly('bottomBounce');
+  }
   assert.ok(Math.abs(scene.upgrades.bottomBounceChance - .6) < .0001);
-  assert.equal(scene.upgrades.options().some((option) => option.id === 'bottomBounce'), false);
+  assert.equal(scene.upgrades.isAvailable('bottomBounce'), false);
+
+  chooseDirectly('topLaunch');
+  for (let level = 0; level < GAME.upgrade.topRecoveryMaxLevel; level += 1) {
+    chooseDirectly('topRecovery');
+  }
+  chooseDirectly('blastLaunch');
+  for (let level = 0; level < GAME.upgrade.blastCooldownMaxLevel; level += 1) {
+    chooseDirectly('blastCooldown');
+  }
+
+  const cappedUpgradeIds = [
+    'paddleLength',
+    'bottomBounce',
+    'topLaunch',
+    'topRecovery',
+    'blastLaunch',
+    'blastCooldown',
+  ];
+  for (const id of cappedUpgradeIds) assert.equal(scene.upgrades.isAvailable(id), false);
+  for (let sample = 0; sample < 20; sample += 1) {
+    assert.equal(
+      scene.upgrades.options().some((option) => cappedUpgradeIds.includes(option.id)),
+      false,
+    );
+  }
 
   for (let index = 0; index < 40; index += 1) scene.update(1 / 120);
   const ball = scene.world.first('ball');
