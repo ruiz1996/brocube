@@ -4,11 +4,27 @@ const UPGRADE_IDS = [
   'rapidFire',
   'multiShot',
   'topLaunch',
+  'topRecovery',
   'blastLaunch',
+  'blastCooldown',
   'ballSpeed',
   'paddleLength',
   'bottomBounce',
 ];
+
+const UPGRADE_PREREQUISITES = {
+  topRecovery: 'topLaunch',
+  blastCooldown: 'blastLaunch',
+};
+
+const UPGRADE_MAX_LEVEL_KEYS = {
+  topLaunch: 'topLaunchMaxLevel',
+  topRecovery: 'topRecoveryMaxLevel',
+  blastLaunch: 'blastLaunchMaxLevel',
+  blastCooldown: 'blastCooldownMaxLevel',
+  paddleLength: 'paddleLengthMaxLevel',
+  bottomBounce: 'bottomBounceMaxLevel',
+};
 
 export function calculateUpgradeScoreCost(upgradeIndex, config = GAME.upgrade) {
   const index = Math.max(0, upgradeIndex);
@@ -31,7 +47,9 @@ export class UpgradeSystem {
       rapidFire: 0,
       multiShot: 0,
       topLaunch: 0,
+      topRecovery: 0,
       blastLaunch: 0,
+      blastCooldown: 0,
       ballSpeed: 0,
       paddleLength: 0,
       bottomBounce: 0,
@@ -65,6 +83,21 @@ export class UpgradeSystem {
     return this.levels.blastLaunch > 0 ? GAME.upgrade.blastLaunchChance : 0;
   }
 
+  get blastInterval() {
+    return Math.max(
+      GAME.upgrade.blastMinimumInterval,
+      GAME.upgrade.blastInterval
+        * GAME.upgrade.blastIntervalMultiplierPerLevel ** this.levels.blastCooldown,
+    );
+  }
+
+  get topRecoveryChance() {
+    return Math.min(
+      1,
+      GAME.upgrade.topRecoveryChancePerLevel * this.levels.topRecovery,
+    );
+  }
+
   get bottomBounceChance() {
     return Math.min(
       1,
@@ -81,12 +114,16 @@ export class UpgradeSystem {
     if (this.pendingChoices > 0 && !this.waitingForChoice) this.#offer();
   }
 
+  isAvailable(id) {
+    if (!UPGRADE_IDS.includes(id)) return false;
+    const prerequisite = UPGRADE_PREREQUISITES[id];
+    if (prerequisite && this.levels[prerequisite] === 0) return false;
+    const maxLevelKey = UPGRADE_MAX_LEVEL_KEYS[id];
+    return !maxLevelKey || this.levels[id] < GAME.upgrade[maxLevelKey];
+  }
+
   choose(id) {
-    if (!this.waitingForChoice || !UPGRADE_IDS.includes(id)) return false;
-    if (id === 'topLaunch' && this.levels.topLaunch >= GAME.upgrade.topLaunchMaxLevel) return false;
-    if (id === 'blastLaunch' && this.levels.blastLaunch >= GAME.upgrade.blastLaunchMaxLevel) return false;
-    if (id === 'paddleLength' && this.levels.paddleLength >= GAME.upgrade.paddleLengthMaxLevel) return false;
-    if (id === 'bottomBounce' && this.levels.bottomBounce >= GAME.upgrade.bottomBounceMaxLevel) return false;
+    if (!this.waitingForChoice || !this.isAvailable(id)) return false;
     this.levels[id] += 1;
     this.pendingChoices -= 1;
     this.waitingForChoice = false;
@@ -106,6 +143,14 @@ export class UpgradeSystem {
         const center = paddle.x + paddle.width / 2;
         paddle.width = GAME.paddle.width * GAME.upgrade.paddleLengthMultiplierPerLevel ** this.levels.paddleLength;
         paddle.x = Math.max(14, Math.min(GAME.width - paddle.width - 14, center - paddle.width / 2));
+      }
+    } else if (id === 'blastCooldown') {
+      for (const ball of this.scene.world.all('ball')) {
+        for (const effect of ball.periodicEffects) {
+          if (effect.id !== 'area-blast') continue;
+          effect.interval = this.blastInterval;
+          effect.timeRemaining = Math.min(effect.timeRemaining, effect.interval);
+        }
       }
     }
 
@@ -156,6 +201,20 @@ export class UpgradeSystem {
         description: `每次自动发射有 ${Math.round(GAME.upgrade.blastLaunchChance * 100)}% 概率追加爆裂球，每 ${GAME.upgrade.blastInterval.toFixed(1)} 秒对 ${GAME.upgrade.blastRadius} 范围内方块造成 ${GAME.upgrade.blastDamage} 点伤害`,
       },
       {
+        id: 'blastCooldown',
+        name: '爆裂增压',
+        level: this.levels.blastCooldown,
+        maxLevel: GAME.upgrade.blastCooldownMaxLevel,
+        description: `爆炸间隔 ${this.blastInterval.toFixed(2)}s → ${Math.max(GAME.upgrade.blastMinimumInterval, this.blastInterval * GAME.upgrade.blastIntervalMultiplierPerLevel).toFixed(2)}s`,
+      },
+      {
+        id: 'topRecovery',
+        name: '天顶续航',
+        level: this.levels.topRecovery,
+        maxLevel: GAME.upgrade.topRecoveryMaxLevel,
+        description: `天顶球触底额外获得 ${Math.round(this.topRecoveryChance * 100)}% → ${Math.round(Math.min(1, this.topRecoveryChance + GAME.upgrade.topRecoveryChancePerLevel) * 100)}% 保留判定`,
+      },
+      {
         id: 'paddleLength',
         name: '延展力场',
         level: this.levels.paddleLength,
@@ -169,7 +228,7 @@ export class UpgradeSystem {
         maxLevel: GAME.upgrade.bottomBounceMaxLevel,
         description: `球触底时有 ${Math.round(this.bottomBounceChance * 100)}% → ${Math.round(Math.min(1, this.bottomBounceChance + GAME.upgrade.bottomBounceChancePerLevel) * 100)}% 概率反弹`,
       },
-    ].filter((option) => option.maxLevel === undefined || option.level < option.maxLevel);
+    ].filter((option) => this.isAvailable(option.id));
 
     for (let index = candidates.length - 1; index > 0; index -= 1) {
       const target = Math.floor(this.random() * (index + 1));

@@ -12,6 +12,7 @@ export class BallFactory {
     angle,
     speed = GAME.ball.speed,
     speedMultiplier = 1,
+    launchSource = 'manual',
     visualOverrides = {},
     periodicEffects = [],
   }) {
@@ -24,6 +25,7 @@ export class BallFactory {
       y,
       angle,
       speed: speed * speedMultiplier * definition.speedMultiplier,
+      launchSource,
       visualOverrides,
       periodicEffects: [...definition.periodicEffects, ...periodicEffects],
     });
@@ -34,6 +36,7 @@ export class BallFactory {
     return new Ball({
       definitionId: BASIC_BALL_ID,
       role: 'derived',
+      launchSource: 'derived',
       x,
       y,
       angle,
@@ -57,6 +60,7 @@ export class BallFactory {
     y,
     angle,
     speed,
+    launchSource,
     visualOverrides = {},
     periodicEffects = [],
   }) {
@@ -67,6 +71,7 @@ export class BallFactory {
       y,
       angle,
       speed,
+      launchSource,
       radius: definition.radius,
       damage: definition.damage,
       damageType: definition.damageType,

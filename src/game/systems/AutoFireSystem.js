@@ -52,8 +52,8 @@ export class AutoFireSystem {
         },
         periodicEffects: [{
           id: 'area-blast',
-          interval: GAME.upgrade.blastInterval,
-          initialDelay: GAME.upgrade.blastInterval,
+          interval: this.scene.upgrades.blastInterval,
+          initialDelay: this.scene.upgrades.blastInterval,
           config: {
             radius: GAME.upgrade.blastRadius,
             damage: GAME.upgrade.blastDamage,
@@ -88,6 +88,7 @@ export class AutoFireSystem {
       ...shot,
       speed: GAME.ball.speed,
       speedMultiplier: this.scene.upgrades.ballSpeedMultiplier * speedMultiplier,
+      launchSource: source,
       visualOverrides,
       periodicEffects,
     });

@@ -241,7 +241,7 @@ test('碰撞策略可穿透后回退为反弹，分裂只创建基础衍生球',
   scene.exit();
 });
 
-test('挡板每五秒自动发射一颗新球', () => {
+test('挡板每三秒自动发射一颗新球', () => {
   const events = new EventBus();
   const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
   const scene = new BreakoutScene();
@@ -252,8 +252,9 @@ test('挡板每五秒自动发射一颗新球', () => {
     plugins: { plugins: new Map() },
   });
   scene.startNewGame();
-  for (let index = 0; index < 650; index += 1) scene.update(1 / 120);
-  assert.equal(launches, 2);
+  for (let index = 0; index < 800; index += 1) scene.update(1 / 120);
+  assert.equal(GAME.autoFireInterval, 3);
+  assert.equal(launches, 3);
   scene.exit();
 });
 
@@ -284,6 +285,7 @@ test('天顶增援有25%概率追加一颗双倍速度的顶部球', () => {
   const topLaunch = launches.find(({ emitterId }) => emitterId === 'top');
   assert.ok(regularLaunch);
   assert.equal(topLaunch.source, 'top-launch');
+  assert.equal(topLaunch.ball.launchSource, 'top-launch');
   assert.ok(topLaunch.ball.velocityY > 0);
   assert.equal(topLaunch.ball.visual.renderer, 'top-launch');
   assert.equal(topLaunch.ball.visual.color, '#ffad5a');
@@ -323,6 +325,7 @@ test('爆裂核心有25%概率发射带周期范围伤害和独特外观的球',
   const blastLaunch = launches.find(({ source }) => source === 'blast-launch');
   assert.ok(blastLaunch);
   assert.equal(blastLaunch.emitterId, 'paddle');
+  assert.equal(blastLaunch.ball.launchSource, 'blast-launch');
   assert.equal(blastLaunch.ball.visual.renderer, 'blast-core');
   assert.equal(blastLaunch.ball.visual.trailLength, 12);
   assert.equal(blastLaunch.ball.periodicEffects.length, 1);
@@ -354,6 +357,110 @@ test('爆裂核心有25%概率发射带周期范围伤害和独特外观的球',
   assert.equal(scene.world.all('blast-wave').length, 1);
   assert.ok(scene.world.all('particle').length >= 26);
   assert.equal(scene.upgrades.options().some((option) => option.id === 'blastLaunch'), false);
+  scene.exit();
+});
+
+test('特殊球进阶卡需要前置，爆裂增压会缩短现有与未来爆裂球间隔', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  const prepareChoice = () => {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+  };
+
+  assert.equal(scene.upgrades.isAvailable('blastCooldown'), false);
+  prepareChoice();
+  assert.equal(scene.chooseUpgrade('blastCooldown'), false);
+  assert.equal(scene.chooseUpgrade('blastLaunch'), true);
+  assert.equal(scene.upgrades.isAvailable('blastCooldown'), true);
+
+  scene.autoFire.random = () => 0;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const firstBlast = scene.world.all('ball').find((ball) => ball.launchSource === 'blast-launch');
+  const firstEffect = firstBlast.periodicEffects.find((effect) => effect.id === 'area-blast');
+  assert.equal(firstEffect.interval, GAME.upgrade.blastInterval);
+
+  prepareChoice();
+  assert.equal(scene.chooseUpgrade('blastCooldown'), true);
+  assert.equal(scene.upgrades.levels.blastCooldown, 1);
+  assert.ok(scene.upgrades.blastInterval < GAME.upgrade.blastInterval);
+  assert.equal(firstEffect.interval, scene.upgrades.blastInterval);
+  assert.ok(firstEffect.timeRemaining <= firstEffect.interval);
+
+  for (let level = 1; level < GAME.upgrade.blastCooldownMaxLevel; level += 1) {
+    prepareChoice();
+    assert.equal(scene.chooseUpgrade('blastCooldown'), true);
+  }
+  assert.equal(scene.upgrades.isAvailable('blastCooldown'), false);
+
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const blastEffects = scene.world.all('ball')
+    .filter((ball) => ball.launchSource === 'blast-launch')
+    .map((ball) => ball.periodicEffects.find((effect) => effect.id === 'area-blast'));
+  assert.equal(blastEffects.length, 2);
+  assert.ok(blastEffects.every((effect) => effect.interval === scene.upgrades.blastInterval));
+  scene.exit();
+});
+
+test('天顶续航在普通底线判定失败后为天顶球追加独立保留判定', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  const saves = [];
+  events.on('ball:saved', (payload) => saves.push(payload));
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  const prepareChoice = () => {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+  };
+
+  assert.equal(scene.upgrades.isAvailable('topRecovery'), false);
+  prepareChoice();
+  assert.equal(scene.chooseUpgrade('topRecovery'), false);
+  assert.equal(scene.chooseUpgrade('topLaunch'), true);
+  assert.equal(scene.upgrades.isAvailable('topRecovery'), true);
+  prepareChoice();
+  assert.equal(scene.chooseUpgrade('topRecovery'), true);
+  assert.equal(scene.upgrades.topRecoveryChance, GAME.upgrade.topRecoveryChancePerLevel);
+
+  scene.autoFire.random = () => 0;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const topBall = scene.world.all('ball').find((ball) => ball.launchSource === 'top-launch');
+  topBall.y = GAME.playBottom + topBall.radius + 1;
+  topBall.velocityY = 100;
+  scene.ballPhysics.random = () => .2;
+  scene.ballPhysics.update(0);
+  assert.equal(topBall.active, true);
+  assert.ok(topBall.velocityY < 0);
+  assert.equal(saves.at(-1).reason, 'top-recovery');
+
+  const regularBall = scene.ballFactory.createPrimary({
+    x: GAME.width / 2,
+    y: GAME.playBottom + GAME.ball.radius + 1,
+    angle: Math.PI / 2,
+    launchSource: 'automatic',
+  });
+  scene.world.add(regularBall);
+  scene.world.flush();
+  scene.ballPhysics.update(0);
+  assert.equal(regularBall.active, false);
   scene.exit();
 });
 
