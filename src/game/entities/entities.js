@@ -15,16 +15,45 @@ export class Paddle extends Entity {
 }
 
 export class Ball extends Entity {
-  constructor({ x, y, speed = GAME.ball.speed, angle = -Math.PI / 2 } = {}) {
+  constructor({
+    definitionId = 'basic',
+    role = 'primary',
+    x,
+    y,
+    speed = GAME.ball.speed,
+    angle = -Math.PI / 2,
+    radius = GAME.ball.radius,
+    damage = 1,
+    damageType = 'kinetic',
+    damageEffects = [],
+    collisionPolicy = 'bounce',
+    collisionConfig = {},
+    visual = {},
+  } = {}) {
     super('ball', {
-      tags: ['collidable', 'projectile'],
+      tags: ['collidable', 'projectile', role],
+      definitionId,
+      role,
       x: x ?? GAME.width / 2,
       y: y ?? GAME.paddle.y - 14,
-      radius: GAME.ball.radius,
+      radius,
       velocityX: Math.cos(angle) * speed,
       velocityY: Math.sin(angle) * speed,
       speed,
+      damage,
+      damageType,
+      damageEffects: damageEffects.map((effect) => (
+        typeof effect === 'string'
+          ? { id: effect, config: {} }
+          : { id: effect.id, config: { ...(effect.config ?? {}) } }
+      )),
+      collisionPolicy,
+      collisionConfig: { ...collisionConfig },
+      collisionState: { ...collisionConfig },
+      visual: { ...visual },
+      brickContacts: new Set(),
       attached: false,
+      age: 0,
       trail: [],
     });
   }

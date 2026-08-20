@@ -76,15 +76,6 @@ function circlePolygon(ball, brick) {
   return { nx: collisionAxis.x, ny: collisionAxis.y, depth: minimumOverlap };
 }
 
-function reflect(ball, normal) {
-  const dot = ball.velocityX * normal.nx + ball.velocityY * normal.ny;
-  if (dot >= 0) return;
-  ball.velocityX -= 2 * dot * normal.nx;
-  ball.velocityY -= 2 * dot * normal.ny;
-  ball.x += normal.nx * (normal.depth + .2);
-  ball.y += normal.ny * (normal.depth + .2);
-}
-
 export class BallPhysicsSystem {
   constructor(scene) {
     this.scene = scene;
@@ -97,8 +88,10 @@ export class BallPhysicsSystem {
 
     for (const ball of world.all('ball')) {
       if (ball.attached) continue;
+      ball.age += dt;
       ball.trail.unshift({ x: ball.x, y: ball.y });
-      if (ball.trail.length > 8) ball.trail.pop();
+      const trailLength = ball.visual.trailLength ?? 8;
+      if (ball.trail.length > trailLength) ball.trail.pop();
       ball.x += ball.velocityX * dt;
       ball.y += ball.velocityY * dt;
 
@@ -132,16 +125,28 @@ export class BallPhysicsSystem {
       }
 
       let hitBrick = null;
+      const overlappingBrickIds = new Set();
       for (const brick of world.all('brick')) {
         const collision = circlePolygon(ball, brick);
         if (!collision) continue;
+        overlappingBrickIds.add(brick.id);
+        if (hitBrick) continue;
         const approach = ball.velocityX * collision.nx + ball.velocityY * collision.ny;
         if (approach >= 0) continue;
-        reflect(ball, collision);
-        hitBrick = brick;
-        break;
+        if (!this.scene.ballCombat.canHit(ball, brick)) continue;
+        hitBrick = { brick, collision };
       }
-      if (hitBrick) events.emit('brick:hit', { brick: hitBrick, ball });
+      for (const brickId of ball.brickContacts) {
+        if (!overlappingBrickIds.has(brickId)) ball.brickContacts.delete(brickId);
+      }
+      if (hitBrick) {
+        this.scene.ballCombat.resolveBrickCollision({
+          ball,
+          brick: hitBrick.brick,
+          normal: hitBrick.collision,
+        });
+      }
+      if (!ball.active) continue;
       if (ball.y - ball.radius > GAME.playBottom) {
         if (this.random() < this.scene.upgrades.bottomBounceChance) {
           ball.y = GAME.playBottom - ball.radius;

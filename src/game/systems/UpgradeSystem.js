@@ -1,6 +1,6 @@
 import { GAME } from '../config.js';
 
-const UPGRADE_IDS = ['rapidFire', 'multiShot', 'ballSpeed', 'paddleLength', 'bottomBounce'];
+const UPGRADE_IDS = ['rapidFire', 'multiShot', 'topLaunch', 'ballSpeed', 'paddleLength', 'bottomBounce'];
 
 export class UpgradeSystem {
   constructor(scene) {
@@ -10,7 +10,14 @@ export class UpgradeSystem {
   }
 
   reset() {
-    this.levels = { rapidFire: 0, multiShot: 0, ballSpeed: 0, paddleLength: 0, bottomBounce: 0 };
+    this.levels = {
+      rapidFire: 0,
+      multiShot: 0,
+      topLaunch: 0,
+      ballSpeed: 0,
+      paddleLength: 0,
+      bottomBounce: 0,
+    };
     this.nextScore = GAME.upgrade.scoreInterval;
     this.pendingChoices = 0;
     this.waitingForChoice = false;
@@ -31,6 +38,10 @@ export class UpgradeSystem {
     return GAME.upgrade.ballSpeedMultiplierPerLevel ** this.levels.ballSpeed;
   }
 
+  get topLaunchChance() {
+    return this.levels.topLaunch > 0 ? GAME.upgrade.topLaunchChance : 0;
+  }
+
   get bottomBounceChance() {
     return Math.min(
       1,
@@ -48,6 +59,7 @@ export class UpgradeSystem {
 
   choose(id) {
     if (!this.waitingForChoice || !UPGRADE_IDS.includes(id)) return false;
+    if (id === 'topLaunch' && this.levels.topLaunch >= GAME.upgrade.topLaunchMaxLevel) return false;
     if (id === 'paddleLength' && this.levels.paddleLength >= GAME.upgrade.paddleLengthMaxLevel) return false;
     if (id === 'bottomBounce' && this.levels.bottomBounce >= GAME.upgrade.bottomBounceMaxLevel) return false;
     this.levels[id] += 1;
@@ -102,6 +114,13 @@ export class UpgradeSystem {
         name: '动能超频',
         level: this.levels.ballSpeed,
         description: `所有球速度提升 ${Math.round((GAME.upgrade.ballSpeedMultiplierPerLevel - 1) * 100)}%`,
+      },
+      {
+        id: 'topLaunch',
+        name: '天顶增援',
+        level: this.levels.topLaunch,
+        maxLevel: GAME.upgrade.topLaunchMaxLevel,
+        description: `每次自动发射有 ${Math.round(GAME.upgrade.topLaunchChance * 100)}% 概率从顶部追加一颗 ${Math.round(GAME.upgrade.topLaunchSpeedMultiplier * 100)}% 速度球`,
       },
       {
         id: 'paddleLength',

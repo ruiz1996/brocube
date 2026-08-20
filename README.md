@@ -35,13 +35,68 @@ src/
 ├─ game/
 │  ├─ BreakoutScene.js   # 本玩法的编排与状态机
 │  ├─ BreakoutRenderer.js# 纯渲染
+│  ├─ balls/             # 球定义、工厂、伤害/碰撞行为与渲染注册表
+│  ├─ emitters/          # 发射位置和方向策略（挡板、顶部等）
 │  ├─ entities/          # 球、挡板、砖块、粒子
-│  ├─ systems/           # 移动、自动发球、多边形碰撞、生成、下压与特效
+│  ├─ systems/           # 移动、战斗结算、自动发球、生成、下压与特效
 │  └─ plugins/           # 可插拔玩法示例
 └─ ui/                   # DOM 界面，不侵入游戏逻辑
 ```
 
 ## 扩展约定
+
+### 特殊球框架
+
+球的能力使用组合式定义，不需要为“闪电穿透分裂球”建立多层继承类：
+
+- `BallDefinitionRegistry` 保存伤害、伤害类型、命中特效、方块碰撞策略、速度和外观。
+- `BallFactory` 是球的唯一推荐创建入口，区分 `primary` 主球和 `derived` 衍生球。
+- `BallEmitterRegistry` 决定发射来源和方向，内置 `paddle` 与 `top`。
+- `BallBehaviorRegistry` 管理命中特效以及 `bounce`、`pierce`、`split` 等碰撞策略。
+- `BallCombatSystem` 是唯一伤害结算入口，统一发出受击、受伤和击杀事件。
+- `BallRendererRegistry` 按球定义选择外观绘制器。
+
+衍生球的限制被集中在 `BallFactory.createDerived()`：它必定使用 `basic` 定义、1 点动能伤害、普通反弹、无命中特效，并使用更小的半径。分裂策略也只能通过此入口生成衍生球，因此特殊主球的闪电、穿透或再次分裂不会被继承。
+
+以下是以后接入特殊球的示例；注册完成后不需要修改物理系统：
+
+```js
+scene.ballBehaviors.registerDamageEffect('chain-lightning', ({
+  scene, combat, ball, brick, effectConfig,
+}) => {
+  const targets = scene.world.all('brick')
+    .filter((candidate) => candidate !== brick)
+    .slice(0, effectConfig.jumps);
+  for (const target of targets) {
+    combat.applyDamage({
+      ball,
+      brick: target,
+      damage: effectConfig.damage,
+      damageType: 'electric',
+      cause: 'chain-lightning',
+    });
+  }
+});
+
+scene.ballDefinitions.register('storm-piercer', {
+  damage: 2,
+  damageType: 'electric',
+  damageEffects: [{
+    id: 'chain-lightning',
+    config: { jumps: 3, damage: 1 },
+  }],
+  collisionPolicy: 'pierce',
+  collisionConfig: { remainingPierces: 4 },
+  visual: { color: '#a88cff', trailColor: '#7df9ff' },
+});
+
+scene.configureAutoFire({
+  definitionId: 'storm-piercer',
+  emitterId: 'top',
+});
+```
+
+要创建分裂球，只需把定义的 `collisionPolicy` 改为 `split`，并在 `collisionConfig` 中填写 `splitCount`、`spreadRadians`、`derivedSpeedRatio` 和可选的 `consumeParent`。由此产生的小球仍会被强制转为基础衍生球。
 
 - **新砖块**：扩展 `Brick` 的数据字段或替换 `BrickFieldSystem` 的多边形生成器，由独立系统监听 `brick:hit` 处理。
 - **血量曲线**：编辑 `config.js` 中的 `brick.healthFormula`。期望血量由基础值、时间幂函数、分数幂函数相加得到，没有固定上限；`randomSpread` 控制同一时刻方块之间的随机差异。
@@ -61,11 +116,12 @@ src/
 
 - **高速装填**：发射间隔每级乘以 `rapidFireMultiplier`，最低不会小于 `minimumFireInterval`。
 - **分裂发射**：每级增加额外生成一颗球的概率；概率按 `1 - (1 - extraBallChancePerLevel) ^ 等级` 叠加。选择一级后，新球改为向上半场随机角度发射。
+- **天顶增援**：每次自动发射时有 25% 概率从顶部追加一颗向下飞行的球，其发射速度为基础速度的 200%；顶部球带有金橙色脉冲光环、彗星尾迹和入场火花，最多 1 级。
 - **动能超频**：所有现存和未来球的速度每级乘以 `ballSpeedMultiplierPerLevel`。
 - **延展力场**：挡板长度每级增加 20%，最多 3 级；满级后退出候选池。
 - **底线回响**：球落底时每级增加 20% 向上反弹概率，最多 3 级；满级概率为 60%。
 
-这些参数都集中在 `config.js` 的 `GAME.upgrade`。前三项可无限重复选择，后两项具有三级上限。
+这些参数都集中在 `config.js` 的 `GAME.upgrade`。高速装填、分裂发射和动能超频可无限重复选择；天顶增援最多 1 级，延展力场和底线回响最多 3 级。
 
 ## 连击计分
 
@@ -74,8 +130,8 @@ src/
 - **新模式**：新增 Scene，实现 `enter / update / render / exit`，交给 `engine.setScene()`。
 - **跨玩法模块**：使用插件。插件可实现 `install(context)`、`beforeUpdate(dt)`、`afterUpdate(dt)`、`afterRender(ctx)`、`dispose()`。
 - **UI/成就/存档**：订阅事件总线，避免把平台能力写进物理或实体代码。
-- **多球**：物理层已经按球集合运行；直接向 `world` 添加新的 `Ball` 即可。
+- **多球**：物理层已经按球集合运行；主球用 `ballFactory.createPrimary()`，分裂等衍生小球只用 `ballFactory.createDerived()`。
 
-现有事件包括 `game:started`、`game:stats`、`game:lost`、`ball:launched`、`ball:bounce`、`ball:lost`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
+现有事件包括 `game:started`、`game:stats`、`game:lost`、`ball:launched`、`ball:loadout-changed`、`ball:split`、`ball:bounce`、`ball:lost`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
 
 开发控制台可通过 `window.breakout.engine` 与 `window.breakout.scene` 检查运行状态或挂载临时实验代码。

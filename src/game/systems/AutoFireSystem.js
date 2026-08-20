@@ -1,11 +1,13 @@
-import { Ball } from '../entities/entities.js';
 import { GAME } from '../config.js';
+import { BASIC_BALL_ID } from '../balls/BallDefinitionRegistry.js';
 
 export class AutoFireSystem {
   constructor(scene) {
     this.scene = scene;
     this.random = Math.random;
     this.timeUntilShot = .25;
+    this.emitterId = 'paddle';
+    this.ballDefinitionId = BASIC_BALL_ID;
   }
 
   get interval() { return this.scene.upgrades.fireInterval; }
@@ -15,30 +17,59 @@ export class AutoFireSystem {
   update(dt) {
     this.timeUntilShot -= dt;
     if (this.timeUntilShot > 0) return;
-    const paddle = this.scene.world.first('paddle');
-    if (!paddle) return;
     const randomized = this.scene.upgrades.levels.multiShot > 0;
-    this.#fireBall(paddle, this.#launchAngle(randomized));
+    this.#fireBall({ randomized });
     if (this.random() < this.scene.upgrades.extraBallChance) {
-      this.#fireBall(paddle, this.#launchAngle(true));
+      this.#fireBall({ randomized: true, source: 'multi-shot' });
+    }
+    if (this.random() < this.scene.upgrades.topLaunchChance) {
+      this.#fireBall({
+        randomized: true,
+        emitterId: 'top',
+        speedMultiplier: GAME.upgrade.topLaunchSpeedMultiplier,
+        source: 'top-launch',
+        visualOverrides: {
+          renderer: 'top-launch',
+          color: '#ffad5a',
+          coreColor: '#fffdf0',
+          innerColor: '#ffe17a',
+          trailColor: '#ff5c7d',
+          trailLength: 16,
+        },
+      });
     }
     this.timeUntilShot += this.interval;
   }
 
-  #fireBall(paddle, angle) {
-    const ball = new Ball({
-      x: paddle.x + paddle.width / 2,
-      y: paddle.y - GAME.ball.radius - 4,
-      angle,
-      speed: GAME.ball.speed * this.scene.upgrades.ballSpeedMultiplier,
+  #fireBall({
+    randomized,
+    emitterId = this.emitterId,
+    speedMultiplier = 1,
+    source = 'automatic',
+    visualOverrides = {},
+  }) {
+    const definition = this.scene.ballDefinitions.get(this.ballDefinitionId);
+    const shot = this.scene.ballEmitters.createShot(emitterId, {
+      scene: this.scene,
+      random: this.random,
+      randomized,
+      radius: definition.radius,
+    });
+    if (!shot) return;
+    const ball = this.scene.ballFactory.createPrimary({
+      definitionId: this.ballDefinitionId,
+      ...shot,
+      speed: GAME.ball.speed,
+      speedMultiplier: this.scene.upgrades.ballSpeedMultiplier * speedMultiplier,
+      visualOverrides,
     });
     this.scene.world.add(ball);
-    this.scene.events.emit('ball:launched', { ball, automatic: true });
-  }
-
-  #launchAngle(randomized) {
-    if (!randomized) return -Math.PI / 2 + (this.random() - .5) * .26;
-    const minimum = GAME.upgrade.randomLaunchMinAngle;
-    return -(minimum + this.random() * (Math.PI - minimum * 2));
+    this.scene.events.emit('ball:launched', {
+      ball,
+      automatic: true,
+      emitterId,
+      definitionId: this.ballDefinitionId,
+      source,
+    });
   }
 }

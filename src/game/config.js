@@ -4,7 +4,12 @@ export const GAME = Object.freeze({
   playTop: 62,
   playBottom: 590,
   paddle: { width: 124, height: 15, y: 552, speed: 650 },
-  ball: { radius: 7, speed: 370, maxSpeed: 620 },
+  ball: {
+    radius: 7,
+    derivedRadius: 4.5,
+    speed: 370,
+    maxSpeed: 620,
+  },
   autoFireInterval: 5,
   combo: {
     windowSeconds: 3,
@@ -16,6 +21,9 @@ export const GAME = Object.freeze({
     rapidFireMultiplier: 0.86,
     minimumFireInterval: 0.75,
     extraBallChancePerLevel: 0.2,
+    topLaunchChance: 0.25,
+    topLaunchSpeedMultiplier: 2,
+    topLaunchMaxLevel: 1,
     ballSpeedMultiplierPerLevel: 1.12,
     paddleLengthMultiplierPerLevel: 1.2,
     paddleLengthMaxLevel: 3,

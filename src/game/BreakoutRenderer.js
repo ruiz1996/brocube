@@ -88,21 +88,7 @@ export class BreakoutRenderer {
   }
 
   #ball(ctx, ball) {
-    ctx.save();
-    for (let i = ball.trail.length - 1; i >= 0; i -= 1) {
-      const point = ball.trail[i];
-      ctx.globalAlpha = (ball.trail.length - i) / ball.trail.length * .12;
-      ctx.fillStyle = COLORS.cyan;
-      ctx.beginPath(); ctx.arc(point.x, point.y, ball.radius * (1 - i / ball.trail.length * .65), 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    ctx.shadowColor = COLORS.cyan;
-    ctx.shadowBlur = 22;
-    const glow = ctx.createRadialGradient(ball.x - 2, ball.y - 2, 0, ball.x, ball.y, ball.radius);
-    glow.addColorStop(0, '#ffffff'); glow.addColorStop(.35, '#bff9ff'); glow.addColorStop(1, COLORS.cyan);
-    ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
+    this.scene.ballRenderers.render(ctx, ball);
   }
 
   #particle(ctx, particle) {

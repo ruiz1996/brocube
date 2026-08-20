@@ -9,6 +9,11 @@ export class EffectsSystem {
       scene.events.on('ball:bounce', ({ ball, surface }) => {
         if (surface === 'paddle') this.burst(ball.x, ball.y + ball.radius, '#55e8ff', 5);
       }),
+      scene.events.on('ball:launched', ({ ball, source }) => {
+        if (source !== 'top-launch') return;
+        this.burst(ball.x, ball.y, '#ffad5a', 13);
+        this.burst(ball.x, ball.y, '#ff5c7d', 7);
+      }),
     ];
   }
 

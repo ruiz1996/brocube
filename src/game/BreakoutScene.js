@@ -6,15 +6,27 @@ import { BallPhysicsSystem } from './systems/BallPhysicsSystem.js';
 import { BrickFieldSystem } from './systems/BrickFieldSystem.js';
 import { EffectsSystem } from './systems/EffectsSystem.js';
 import { UpgradeSystem } from './systems/UpgradeSystem.js';
+import { BallCombatSystem } from './systems/BallCombatSystem.js';
 import { BreakoutRenderer } from './BreakoutRenderer.js';
+import { createDefaultBallDefinitions } from './balls/BallDefinitionRegistry.js';
+import { BallFactory } from './balls/BallFactory.js';
+import { createDefaultBallEmitters } from './emitters/BallEmitterRegistry.js';
+import { createDefaultBallBehaviors } from './balls/BallBehaviorRegistry.js';
+import { createDefaultBallRenderers } from './balls/BallRendererRegistry.js';
 
 export class BreakoutScene {
   enter(context) {
     Object.assign(this, context);
     this.world = new World();
+    this.ballDefinitions = createDefaultBallDefinitions();
+    this.ballFactory = new BallFactory(this.ballDefinitions);
+    this.ballEmitters = createDefaultBallEmitters();
+    this.ballBehaviors = createDefaultBallBehaviors();
+    this.ballRenderers = createDefaultBallRenderers();
     this.renderer = new BreakoutRenderer(this);
     this.upgrades = new UpgradeSystem(this);
     this.autoFire = new AutoFireSystem(this);
+    this.ballCombat = new BallCombatSystem(this);
     this.ballPhysics = new BallPhysicsSystem(this);
     this.brickField = new BrickFieldSystem(this);
     this.systems = [
@@ -28,7 +40,7 @@ export class BreakoutScene {
     this.state = 'idle';
     this.statsTimer = 0;
     this.unsubscribers = [
-      this.events.on('brick:hit', (payload) => this.#onBrickHit(payload)),
+      this.events.on('brick:destroyed', (payload) => this.#onBrickDestroyed(payload)),
       this.events.on('brick:breached', (payload) => this.#onBrickBreached(payload)),
     ];
     this.#resetWorld();
@@ -64,6 +76,14 @@ export class BreakoutScene {
 
   chooseUpgrade(id) { return this.upgrades.choose(id); }
 
+  configureAutoFire({ definitionId = this.autoFire.ballDefinitionId, emitterId = this.autoFire.emitterId }) {
+    this.ballDefinitions.get(definitionId);
+    if (!this.ballEmitters.has(emitterId)) throw new Error(`Unknown ball emitter: ${emitterId}`);
+    this.autoFire.ballDefinitionId = definitionId;
+    this.autoFire.emitterId = emitterId;
+    this.events.emit('ball:loadout-changed', { definitionId, emitterId });
+  }
+
   snapshot() {
     return {
       score: Math.round(this.score),
@@ -84,11 +104,8 @@ export class BreakoutScene {
     this.world.flush();
   }
 
-  #onBrickHit({ brick, ball }) {
-    if (!brick.active || this.state !== 'playing') return;
-    const destroyed = brick.damage(1);
-    this.events.emit(destroyed ? 'brick:destroyed' : 'brick:damaged', { brick, ball });
-    if (!destroyed) return;
+  #onBrickDestroyed({ brick }) {
+    if (this.state !== 'playing') return;
     const comboPlugin = this.plugins.plugins.get('combo-score');
     const multiplier = comboPlugin?.scoreMultiplier?.() ?? 1;
     this.score += brick.score * multiplier;

@@ -7,6 +7,9 @@ import { BreakoutScene } from '../src/game/BreakoutScene.js';
 import { GAME } from '../src/game/config.js';
 import { calculateExpectedBrickHitPoints, selectBrickHitPoints } from '../src/game/systems/BrickFieldSystem.js';
 import { ComboPlugin } from '../src/game/plugins/ComboPlugin.js';
+import { BASIC_BALL_ID, createDefaultBallDefinitions } from '../src/game/balls/BallDefinitionRegistry.js';
+import { BallFactory } from '../src/game/balls/BallFactory.js';
+import { createDefaultBallEmitters } from '../src/game/emitters/BallEmitterRegistry.js';
 
 test('EventBus 支持 once 和主动解绑', () => {
   const events = new EventBus();
@@ -78,7 +81,7 @@ test('生存玩法可自动发球、击毁多边形且落球不结束游戏', ()
   assert.ok(ball);
 
   const brick = scene.world.first('brick');
-  while (brick.active) events.emit('brick:hit', { brick, ball });
+  while (brick.active) scene.ballCombat.applyDamage({ ball, brick, damage: 1, cause: 'test' });
   scene.world.flush();
   assert.ok(scene.score >= 100);
   assert.equal(brick.active, false);
@@ -96,6 +99,128 @@ test('生存玩法可自动发球、击毁多边形且落球不结束游戏', ()
   scene.exit();
 });
 
+test('球工厂保留特殊主球配置，但强制衍生球为基础球', () => {
+  const definitions = createDefaultBallDefinitions();
+  definitions.register('storm-piercer', {
+    damage: 4,
+    damageType: 'electric',
+    radius: 10,
+    speedMultiplier: 1.2,
+    damageEffects: ['chain-lightning'],
+    collisionPolicy: 'pierce',
+    collisionConfig: { remainingPierces: 3 },
+    visual: { color: '#a88cff', renderer: 'orb' },
+  });
+  const factory = new BallFactory(definitions);
+
+  const primary = factory.createPrimary({ definitionId: 'storm-piercer', x: 20, y: 30, angle: 0 });
+  assert.equal(primary.definitionId, 'storm-piercer');
+  assert.equal(primary.role, 'primary');
+  assert.equal(primary.damage, 4);
+  assert.equal(primary.damageType, 'electric');
+  assert.deepEqual(primary.damageEffects, [{ id: 'chain-lightning', config: {} }]);
+  assert.equal(primary.collisionPolicy, 'pierce');
+  assert.equal(primary.collisionState.remainingPierces, 3);
+
+  const derived = factory.createDerived({ x: 20, y: 30, angle: 0 });
+  assert.equal(derived.definitionId, BASIC_BALL_ID);
+  assert.equal(derived.role, 'derived');
+  assert.equal(derived.radius, GAME.ball.derivedRadius);
+  assert.equal(derived.damage, 1);
+  assert.equal(derived.damageType, 'kinetic');
+  assert.deepEqual(derived.damageEffects, []);
+  assert.equal(derived.collisionPolicy, 'bounce');
+  assert.deepEqual(derived.collisionConfig, {});
+});
+
+test('发射器可独立切换挡板发射和顶部发射', () => {
+  const emitters = createDefaultBallEmitters();
+  const scene = {
+    world: {
+      first(type) {
+        return type === 'paddle' ? { x: 100, y: 500, width: 120 } : null;
+      },
+    },
+  };
+  const paddleShot = emitters.createShot('paddle', {
+    scene,
+    random: () => .5,
+    randomized: false,
+    radius: GAME.ball.radius,
+  });
+  assert.equal(paddleShot.x, 160);
+  assert.ok(Math.sin(paddleShot.angle) < 0);
+
+  const topShot = emitters.createShot('top', {
+    scene,
+    random: () => .5,
+    radius: GAME.ball.radius,
+  });
+  assert.equal(topShot.y, GAME.playTop + GAME.ball.radius + 3);
+  assert.ok(Math.sin(topShot.angle) > 0);
+});
+
+test('碰撞策略可穿透后回退为反弹，分裂只创建基础衍生球', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  const brick = scene.world.first('brick');
+  brick.hitPoints = 20;
+  brick.maxHitPoints = 20;
+
+  scene.ballDefinitions.register('test-pierce', {
+    damage: 2,
+    collisionPolicy: 'pierce',
+    collisionConfig: { remainingPierces: 1 },
+  });
+  const piercer = scene.ballFactory.createPrimary({ definitionId: 'test-pierce', x: brick.x, y: brick.y, angle: 0 });
+  scene.world.add(piercer);
+  scene.world.flush();
+  const firstVelocity = piercer.velocityX;
+  scene.ballCombat.resolveBrickCollision({ ball: piercer, brick, normal: { nx: -1, ny: 0, depth: 1 } });
+  assert.equal(brick.hitPoints, 18);
+  assert.equal(piercer.velocityX, firstVelocity);
+  assert.equal(piercer.collisionState.remainingPierces, 0);
+  assert.equal(
+    scene.ballCombat.resolveBrickCollision({ ball: piercer, brick, normal: { nx: -1, ny: 0, depth: 1 } }),
+    null,
+  );
+  assert.equal(brick.hitPoints, 18);
+  piercer.brickContacts.clear();
+  scene.ballCombat.resolveBrickCollision({ ball: piercer, brick, normal: { nx: -1, ny: 0, depth: 1 } });
+  assert.ok(piercer.velocityX < 0);
+
+  scene.ballDefinitions.register('test-split', {
+    damage: 1,
+    collisionPolicy: 'split',
+    collisionConfig: { splitCount: 2 },
+  });
+  const splitter = scene.ballFactory.createPrimary({ definitionId: 'test-split', x: brick.x, y: brick.y, angle: 0 });
+  scene.world.add(splitter);
+  scene.world.flush();
+  const result = scene.ballCombat.resolveBrickCollision({
+    ball: splitter,
+    brick,
+    normal: { nx: -1, ny: 0, depth: 1 },
+  });
+  scene.world.flush();
+  assert.equal(result.action, 'split');
+  assert.equal(splitter.active, false);
+  assert.equal(result.derivedBalls.length, 2);
+  assert.ok(result.derivedBalls.every((ball) => (
+    ball.definitionId === BASIC_BALL_ID
+    && ball.role === 'derived'
+    && ball.collisionPolicy === 'bounce'
+    && ball.damageEffects.length === 0
+  )));
+  scene.exit();
+});
+
 test('挡板每五秒自动发射一颗新球', () => {
   const events = new EventBus();
   const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
@@ -109,6 +234,45 @@ test('挡板每五秒自动发射一颗新球', () => {
   scene.startNewGame();
   for (let index = 0; index < 650; index += 1) scene.update(1 / 120);
   assert.equal(launches, 2);
+  scene.exit();
+});
+
+test('天顶增援有25%概率追加一颗双倍速度的顶部球', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  const launches = [];
+  events.on('ball:launched', (payload) => launches.push(payload));
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  scene.upgrades.waitingForChoice = true;
+  scene.upgrades.pendingChoices = 1;
+  scene.state = 'upgrading';
+  assert.equal(scene.chooseUpgrade('topLaunch'), true);
+  assert.equal(scene.upgrades.levels.topLaunch, 1);
+  assert.equal(scene.upgrades.topLaunchChance, .25);
+
+  scene.autoFire.random = () => 0;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  assert.equal(launches.length, 2);
+
+  const regularLaunch = launches.find(({ emitterId }) => emitterId === 'paddle');
+  const topLaunch = launches.find(({ emitterId }) => emitterId === 'top');
+  assert.ok(regularLaunch);
+  assert.equal(topLaunch.source, 'top-launch');
+  assert.ok(topLaunch.ball.velocityY > 0);
+  assert.equal(topLaunch.ball.visual.renderer, 'top-launch');
+  assert.equal(topLaunch.ball.visual.color, '#ffad5a');
+  assert.equal(topLaunch.ball.visual.trailLength, 16);
+  const regularSpeed = Math.hypot(regularLaunch.ball.velocityX, regularLaunch.ball.velocityY);
+  const topSpeed = Math.hypot(topLaunch.ball.velocityX, topLaunch.ball.velocityY);
+  assert.ok(Math.abs(topSpeed / regularSpeed - GAME.upgrade.topLaunchSpeedMultiplier) < .0001);
+  assert.equal(scene.world.all('particle').length, 20);
+  assert.equal(scene.upgrades.options().some((option) => option.id === 'topLaunch'), false);
   scene.exit();
 });
 

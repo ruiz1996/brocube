@@ -1,0 +1,84 @@
+function reflectBall(ball, normal) {
+  const dot = ball.velocityX * normal.nx + ball.velocityY * normal.ny;
+  if (dot >= 0) return false;
+  ball.velocityX -= 2 * dot * normal.nx;
+  ball.velocityY -= 2 * dot * normal.ny;
+  ball.x += normal.nx * (normal.depth + .2);
+  ball.y += normal.ny * (normal.depth + .2);
+  return true;
+}
+
+export class BallBehaviorRegistry {
+  constructor() {
+    this.damageEffects = new Map();
+    this.collisionPolicies = new Map();
+  }
+
+  registerDamageEffect(id, handler) {
+    if (!id || this.damageEffects.has(id)) throw new Error(`Damage effect already exists: ${id}`);
+    this.damageEffects.set(id, handler);
+    return this;
+  }
+
+  registerCollisionPolicy(id, handler) {
+    if (!id || this.collisionPolicies.has(id)) throw new Error(`Collision policy already exists: ${id}`);
+    this.collisionPolicies.set(id, handler);
+    return this;
+  }
+
+  runDamageEffects(effectEntries, context) {
+    for (const entry of effectEntries) {
+      const id = typeof entry === 'string' ? entry : entry.id;
+      const effectConfig = typeof entry === 'string' ? {} : entry.config;
+      const effect = this.damageEffects.get(id);
+      if (!effect) throw new Error(`Unknown damage effect: ${id}`);
+      effect({ ...context, effectId: id, effectConfig });
+    }
+  }
+
+  resolveCollision(policyId, context) {
+    const policy = this.collisionPolicies.get(policyId) ?? this.collisionPolicies.get('bounce');
+    return policy(context);
+  }
+}
+
+export function createDefaultBallBehaviors() {
+  const registry = new BallBehaviorRegistry();
+
+  registry.registerCollisionPolicy('bounce', ({ ball, contact }) => {
+    reflectBall(ball, contact.normal);
+    return { action: 'bounce' };
+  });
+
+  registry.registerCollisionPolicy('pierce', ({ ball, contact }) => {
+    const remaining = ball.collisionState.remainingPierces ?? Infinity;
+    if (remaining > 0) {
+      if (Number.isFinite(remaining)) ball.collisionState.remainingPierces = remaining - 1;
+      return { action: 'pierce', remainingPierces: ball.collisionState.remainingPierces };
+    }
+    reflectBall(ball, contact.normal);
+    return { action: 'bounce' };
+  });
+
+  registry.registerCollisionPolicy('split', ({ scene, ball, contact }) => {
+    const count = Math.max(1, Math.round(ball.collisionConfig.splitCount ?? 2));
+    const spread = ball.collisionConfig.spreadRadians ?? .8;
+    const speedRatio = ball.collisionConfig.derivedSpeedRatio ?? 1;
+    const baseAngle = Math.atan2(ball.velocityY, ball.velocityX);
+    const speed = Math.hypot(ball.velocityX, ball.velocityY) * speedRatio;
+    const created = [];
+    for (let index = 0; index < count; index += 1) {
+      const progress = count === 1 ? .5 : index / (count - 1);
+      const angle = baseAngle - spread / 2 + spread * progress;
+      const derived = scene.ballFactory.createDerived({ x: ball.x, y: ball.y, angle, speed });
+      scene.world.add(derived);
+      created.push(derived);
+    }
+    if (ball.collisionConfig.consumeParent !== false) ball.destroy();
+    else reflectBall(ball, contact.normal);
+    scene.events.emit('ball:split', { ball, derivedBalls: created });
+    return { action: 'split', derivedBalls: created };
+  });
+
+  return registry;
+}
