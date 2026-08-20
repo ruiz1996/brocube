@@ -15,7 +15,11 @@ import {
 import { calculateUpgradeScoreCost } from '../src/game/systems/UpgradeSystem.js';
 import { calculateUpgradeProgress } from '../src/ui/GameUI.js';
 import { ComboPlugin } from '../src/game/plugins/ComboPlugin.js';
-import { BASIC_BALL_ID, createDefaultBallDefinitions } from '../src/game/balls/BallDefinitionRegistry.js';
+import {
+  BASIC_BALL_ID,
+  VOID_ORBIT_BALL_ID,
+  createDefaultBallDefinitions,
+} from '../src/game/balls/BallDefinitionRegistry.js';
 import { BallFactory } from '../src/game/balls/BallFactory.js';
 import { createDefaultBallEmitters } from '../src/game/emitters/BallEmitterRegistry.js';
 
@@ -202,6 +206,7 @@ test('球工厂保留特殊主球配置，但强制衍生球为基础球', () =>
   assert.deepEqual(derived.periodicEffects, []);
   assert.equal(derived.collisionPolicy, 'bounce');
   assert.deepEqual(derived.collisionConfig, {});
+  assert.deepEqual(derived.orbiters, []);
 });
 
 test('发射器可独立切换挡板发射和顶部发射', () => {
@@ -426,6 +431,75 @@ test('爆裂核心有25%概率发射带周期范围伤害和独特外观的球',
   scene.exit();
 });
 
+test('虚空双星由核心负责反弹死亡，两颗子球独立造成接触伤害', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  const launches = [];
+  events.on('ball:launched', (payload) => launches.push(payload));
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  scene.upgrades.waitingForChoice = true;
+  scene.upgrades.pendingChoices = 1;
+  scene.state = 'upgrading';
+  assert.equal(scene.chooseUpgrade('voidOrbit'), true);
+  assert.equal(scene.upgrades.voidOrbitChance, GAME.upgrade.voidOrbitChance);
+
+  scene.autoFire.random = () => 0;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const voidLaunch = launches.find(({ source }) => source === 'void-orbit');
+  assert.ok(voidLaunch);
+  assert.equal(voidLaunch.definitionId, VOID_ORBIT_BALL_ID);
+  assert.equal(voidLaunch.ball.visual.renderer, 'void-orbit');
+  assert.equal(voidLaunch.ball.contactDamage, false);
+  assert.equal(voidLaunch.ball.orbiters.length, 2);
+  assert.equal(voidLaunch.ball.orbiters[0].damage, GAME.upgrade.voidOrbiterDamage);
+
+  const voidBall = voidLaunch.ball;
+  const target = scene.world.first('brick');
+  target.hitPoints = 10;
+  target.maxHitPoints = 10;
+  voidBall.velocityX = 100;
+  voidBall.velocityY = 0;
+  const coreHit = scene.ballCombat.resolveBrickCollision({
+    ball: voidBall,
+    brick: target,
+    normal: { nx: -1, ny: 0, depth: 1 },
+  });
+  assert.equal(coreHit.damage, 0);
+  assert.equal(target.hitPoints, 10);
+  assert.ok(voidBall.velocityX < 0);
+
+  const targetPoints = target.worldPoints();
+  const targetCenterX = targetPoints.reduce((sum, point) => sum + point.x, 0) / targetPoints.length;
+  const targetCenterY = targetPoints.reduce((sum, point) => sum + point.y, 0) / targetPoints.length;
+  voidBall.age = 0;
+  voidBall.x = targetCenterX - GAME.upgrade.voidOrbitRadius;
+  voidBall.y = targetCenterY;
+  scene.orbiterDamage.update();
+  assert.equal(target.hitPoints, 9);
+  scene.orbiterDamage.update();
+  assert.equal(target.hitPoints, 9);
+
+  voidBall.x -= 100;
+  scene.orbiterDamage.update();
+  voidBall.x += 100;
+  scene.orbiterDamage.update();
+  assert.equal(target.hitPoints, 8);
+
+  voidBall.y = GAME.playBottom + voidBall.radius + 1;
+  voidBall.velocityY = 100;
+  scene.ballPhysics.random = () => 1;
+  scene.ballPhysics.update(0);
+  assert.equal(voidBall.active, false);
+  assert.equal(scene.upgrades.isAvailable('voidOrbit'), false);
+  scene.exit();
+});
+
 test('特殊球进阶卡需要前置，爆裂增压会缩短现有与未来爆裂球间隔', () => {
   const events = new EventBus();
   const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
@@ -589,6 +663,10 @@ test('每三分钟生成包含Boss和小方块的Boss波次', () => {
   assert.equal(waves[0].wave, 1);
   assert.ok(bosses[0].maxHitPoints > Math.max(...minions.map((brick) => brick.maxHitPoints)));
   assert.ok(bosses[0].width > Math.max(...minions.map((brick) => brick.width)));
+  assert.ok([...bosses, ...minions].every((brick) => (
+    brick.x >= GAME.brick.spawnSideMargin
+    && brick.x + brick.width <= GAME.width - GAME.brick.spawnSideMargin
+  )));
   scene.exit();
 });
 
@@ -612,6 +690,10 @@ test('场上方块清空后立即在顶部补充一整排', () => {
   assert.equal(bricks.length, GAME.brick.clearRefillCount);
   assert.equal(refill.bricks.length, GAME.brick.clearRefillCount);
   assert.ok(bricks.every((brick) => brick.y <= GAME.playTop + 14));
+  assert.ok(bricks.every((brick) => (
+    brick.x >= GAME.brick.spawnSideMargin
+    && brick.x + brick.width <= GAME.width - GAME.brick.spawnSideMargin
+  )));
   assert.equal(scene.brickField.spawnTimer, GAME.brick.initialSpawnInterval);
   scene.exit();
 });
@@ -755,6 +837,7 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
   for (let level = 0; level < GAME.upgrade.blastCooldownMaxLevel; level += 1) {
     chooseDirectly('blastCooldown');
   }
+  chooseDirectly('voidOrbit');
 
   const cappedUpgradeIds = [
     'paddleLength',
@@ -763,6 +846,7 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
     'topRecovery',
     'blastLaunch',
     'blastCooldown',
+    'voidOrbit',
   ];
   for (const id of cappedUpgradeIds) assert.equal(scene.upgrades.isAvailable(id), false);
   for (let sample = 0; sample < 20; sample += 1) {

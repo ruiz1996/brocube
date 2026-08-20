@@ -1,3 +1,5 @@
+import { getOrbiterPosition } from './Orbiter.js';
+
 export class BallRendererRegistry {
   constructor() { this.renderers = new Map(); }
 
@@ -148,6 +150,88 @@ export function createDefaultBallRenderers() {
     ctx.lineWidth = 2.2;
     ctx.beginPath();
     ctx.arc(0, 0, ball.radius * 1.92, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * charge);
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  registry.register('void-orbit', (ctx, ball) => {
+    const pulse = .5 + Math.sin((ball.age ?? 0) * 9) * .5;
+    const positions = ball.orbiters.map((orbiter) => ({
+      orbiter,
+      ...getOrbiterPosition(ball, orbiter),
+    }));
+    ctx.save();
+
+    for (let index = ball.trail.length - 1; index >= 0; index -= 1) {
+      const point = ball.trail[index];
+      const progress = 1 - index / ball.trail.length;
+      ctx.globalAlpha = .03 + progress * .12;
+      ctx.fillStyle = ball.visual.trailColor;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, Math.max(1, ball.radius * progress * .7), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = `rgba(165, 108, 255, ${.16 + pulse * .08})`;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.orbiters[0]?.orbitRadius ?? 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    for (const position of positions) {
+      ctx.strokeStyle = 'rgba(165, 108, 255, .16)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(ball.x, ball.y);
+      ctx.lineTo(position.x, position.y);
+      ctx.stroke();
+
+      ctx.shadowColor = position.orbiter.visual.color;
+      ctx.shadowBlur = 16 + pulse * 5;
+      const satellite = ctx.createRadialGradient(
+        position.x - 1,
+        position.y - 1,
+        0,
+        position.x,
+        position.y,
+        position.radius,
+      );
+      satellite.addColorStop(0, position.orbiter.visual.coreColor);
+      satellite.addColorStop(.38, '#c38cff');
+      satellite.addColorStop(1, position.orbiter.visual.color);
+      ctx.fillStyle = satellite;
+      ctx.beginPath();
+      ctx.arc(position.x, position.y, position.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.shadowColor = '#8d4de2';
+    ctx.shadowBlur = 20 + pulse * 7;
+    const core = ctx.createRadialGradient(
+      ball.x - 1.5,
+      ball.y - 1.5,
+      0,
+      ball.x,
+      ball.y,
+      ball.radius * 1.15,
+    );
+    core.addColorStop(0, '#020105');
+    core.addColorStop(.62, ball.visual.coreColor);
+    core.addColorStop(.82, ball.visual.innerColor);
+    core.addColorStop(1, ball.visual.color);
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.radius * 1.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = `rgba(222, 192, 255, ${.45 + pulse * .25})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.radius * (1.48 + pulse * .08), 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   });

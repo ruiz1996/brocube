@@ -7,6 +7,7 @@ const UPGRADE_IDS = [
   'topRecovery',
   'blastLaunch',
   'blastCooldown',
+  'voidOrbit',
   'ballSpeed',
   'paddleLength',
   'bottomBounce',
@@ -22,6 +23,7 @@ const UPGRADE_MAX_LEVEL_KEYS = {
   topRecovery: 'topRecoveryMaxLevel',
   blastLaunch: 'blastLaunchMaxLevel',
   blastCooldown: 'blastCooldownMaxLevel',
+  voidOrbit: 'voidOrbitMaxLevel',
   paddleLength: 'paddleLengthMaxLevel',
   bottomBounce: 'bottomBounceMaxLevel',
 };
@@ -50,6 +52,7 @@ export class UpgradeSystem {
       topRecovery: 0,
       blastLaunch: 0,
       blastCooldown: 0,
+      voidOrbit: 0,
       ballSpeed: 0,
       paddleLength: 0,
       bottomBounce: 0,
@@ -81,6 +84,10 @@ export class UpgradeSystem {
 
   get blastLaunchChance() {
     return this.levels.blastLaunch > 0 ? GAME.upgrade.blastLaunchChance : 0;
+  }
+
+  get voidOrbitChance() {
+    return this.levels.voidOrbit > 0 ? GAME.upgrade.voidOrbitChance : 0;
   }
 
   get blastInterval() {
@@ -210,6 +217,13 @@ export class UpgradeSystem {
         level: this.levels.blastCooldown,
         maxLevel: GAME.upgrade.blastCooldownMaxLevel,
         description: `爆炸间隔 ${this.blastInterval.toFixed(2)}s → ${Math.max(GAME.upgrade.blastMinimumInterval, this.blastInterval * GAME.upgrade.blastIntervalMultiplierPerLevel).toFixed(2)}s`,
+      },
+      {
+        id: 'voidOrbit',
+        name: '虚空双星',
+        level: this.levels.voidOrbit,
+        maxLevel: GAME.upgrade.voidOrbitMaxLevel,
+        description: `每次自动发射有 ${Math.round(GAME.upgrade.voidOrbitChance * 100)}% 概率追加虚空核心；核心负责反弹，两颗环绕子球各造成 ${GAME.upgrade.voidOrbiterDamage} 点伤害`,
       },
       {
         id: 'topRecovery',

@@ -25,7 +25,7 @@ function circleAabb(ball, box) {
   return { nx: 0, ny: 1, depth: ball.radius };
 }
 
-function circlePolygon(ball, brick) {
+export function circlePolygon(ball, brick) {
   const points = brick.worldPoints();
   const axes = [];
   for (let index = 0; index < points.length; index += 1) {

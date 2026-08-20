@@ -7,17 +7,22 @@ export class BallCombatSystem {
     if (!ball.active || !brick.active || !this.canHit(ball, brick)) return null;
     ball.brickContacts.add(brick.id);
     const contact = { normal };
-    const damageResult = this.applyDamage({ ball, brick, damage: ball.damage, contact });
-    this.scene.ballBehaviors.runDamageEffects(ball.damageEffects, {
-      scene: this.scene,
-      world: this.scene.world,
-      events: this.scene.events,
-      combat: this,
-      ball,
-      brick,
-      contact,
-      ...damageResult,
-    });
+    const dealsContactDamage = ball.contactDamage !== false && ball.damage > 0;
+    const damageResult = dealsContactDamage
+      ? this.applyDamage({ ball, brick, damage: ball.damage, contact })
+      : { damage: 0, destroyed: false };
+    if (dealsContactDamage) {
+      this.scene.ballBehaviors.runDamageEffects(ball.damageEffects, {
+        scene: this.scene,
+        world: this.scene.world,
+        events: this.scene.events,
+        combat: this,
+        ball,
+        brick,
+        contact,
+        ...damageResult,
+      });
+    }
     const collisionResult = this.scene.ballBehaviors.resolveCollision(ball.collisionPolicy, {
       scene: this.scene,
       world: this.scene.world,

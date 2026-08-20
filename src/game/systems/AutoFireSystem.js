@@ -1,5 +1,5 @@
 import { GAME } from '../config.js';
-import { BASIC_BALL_ID } from '../balls/BallDefinitionRegistry.js';
+import { BASIC_BALL_ID, VOID_ORBIT_BALL_ID } from '../balls/BallDefinitionRegistry.js';
 
 export class AutoFireSystem {
   constructor(scene) {
@@ -64,18 +64,27 @@ export class AutoFireSystem {
         }],
       });
     }
+    if (this.random() < this.scene.upgrades.voidOrbitChance) {
+      this.#fireBall({
+        randomized: true,
+        definitionId: VOID_ORBIT_BALL_ID,
+        emitterId: 'paddle',
+        source: 'void-orbit',
+      });
+    }
     this.timeUntilShot += this.interval;
   }
 
   #fireBall({
     randomized,
+    definitionId = this.ballDefinitionId,
     emitterId = this.emitterId,
     speedMultiplier = 1,
     source = 'automatic',
     visualOverrides = {},
     periodicEffects = [],
   }) {
-    const definition = this.scene.ballDefinitions.get(this.ballDefinitionId);
+    const definition = this.scene.ballDefinitions.get(definitionId);
     const shot = this.scene.ballEmitters.createShot(emitterId, {
       scene: this.scene,
       random: this.random,
@@ -84,7 +93,7 @@ export class AutoFireSystem {
     });
     if (!shot) return;
     const ball = this.scene.ballFactory.createPrimary({
-      definitionId: this.ballDefinitionId,
+      definitionId,
       ...shot,
       speed: GAME.ball.speed,
       speedMultiplier: this.scene.upgrades.ballSpeedMultiplier * speedMultiplier,
@@ -97,7 +106,7 @@ export class AutoFireSystem {
       ball,
       automatic: true,
       emitterId,
-      definitionId: this.ballDefinitionId,
+      definitionId,
       source,
     });
   }

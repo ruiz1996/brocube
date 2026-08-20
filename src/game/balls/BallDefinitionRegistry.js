@@ -1,6 +1,7 @@
 import { GAME, COLORS } from '../config.js';
 
 export const BASIC_BALL_ID = 'basic';
+export const VOID_ORBIT_BALL_ID = 'void-orbit';
 
 function normalizeDamageEffect(effect) {
   if (typeof effect === 'string') return { id: effect, config: {} };
@@ -19,6 +20,24 @@ function normalizePeriodicEffect(effect) {
   };
 }
 
+function normalizeOrbitingDamage(config) {
+  if (!config) return null;
+  return {
+    count: Math.max(1, Math.round(config.count ?? 1)),
+    orbitRadius: Math.max(0, config.orbitRadius ?? 20),
+    radius: Math.max(1, config.radius ?? 4),
+    angularSpeed: config.angularSpeed ?? 3,
+    phaseOffset: config.phaseOffset ?? 0,
+    damage: Math.max(0, config.damage ?? 1),
+    damageType: config.damageType ?? 'kinetic',
+    visual: {
+      color: '#9b6cff',
+      coreColor: '#ffffff',
+      ...(config.visual ?? {}),
+    },
+  };
+}
+
 export class BallDefinitionRegistry {
   constructor() { this.definitions = new Map(); }
 
@@ -28,12 +47,14 @@ export class BallDefinitionRegistry {
       id,
       damage: definition.damage ?? 1,
       damageType: definition.damageType ?? 'kinetic',
+      contactDamage: definition.contactDamage ?? true,
       radius: definition.radius ?? GAME.ball.radius,
       speedMultiplier: definition.speedMultiplier ?? 1,
       damageEffects: (definition.damageEffects ?? []).map(normalizeDamageEffect),
       periodicEffects: (definition.periodicEffects ?? []).map(normalizePeriodicEffect),
       collisionPolicy: definition.collisionPolicy ?? 'bounce',
       collisionConfig: { ...(definition.collisionConfig ?? {}) },
+      orbitingDamage: normalizeOrbitingDamage(definition.orbitingDamage),
       visual: {
         renderer: 'orb',
         color: COLORS.cyan,
@@ -60,5 +81,30 @@ export function createDefaultBallDefinitions() {
     damage: 1,
     damageType: 'kinetic',
     collisionPolicy: 'bounce',
+  }).register(VOID_ORBIT_BALL_ID, {
+    damage: 0,
+    damageType: 'void',
+    contactDamage: false,
+    collisionPolicy: 'bounce',
+    orbitingDamage: {
+      count: 2,
+      orbitRadius: GAME.upgrade.voidOrbitRadius,
+      radius: GAME.upgrade.voidOrbiterRadius,
+      angularSpeed: GAME.upgrade.voidOrbiterAngularSpeed,
+      damage: GAME.upgrade.voidOrbiterDamage,
+      damageType: 'void',
+      visual: {
+        color: '#a56cff',
+        coreColor: '#f4e9ff',
+      },
+    },
+    visual: {
+      renderer: 'void-orbit',
+      color: '#6e38bd',
+      coreColor: '#090512',
+      innerColor: '#24103f',
+      trailColor: '#7c4bc7',
+      trailLength: 10,
+    },
   });
 }

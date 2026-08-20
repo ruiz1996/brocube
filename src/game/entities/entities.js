@@ -26,10 +26,12 @@ export class Ball extends Entity {
     radius = GAME.ball.radius,
     damage = 1,
     damageType = 'kinetic',
+    contactDamage = true,
     damageEffects = [],
     periodicEffects = [],
     collisionPolicy = 'bounce',
     collisionConfig = {},
+    orbiters = [],
     visual = {},
   } = {}) {
     super('ball', {
@@ -45,6 +47,7 @@ export class Ball extends Entity {
       speed,
       damage,
       damageType,
+      contactDamage,
       damageEffects: damageEffects.map((effect) => (
         typeof effect === 'string'
           ? { id: effect, config: {} }
@@ -62,6 +65,12 @@ export class Ball extends Entity {
       collisionPolicy,
       collisionConfig: { ...collisionConfig },
       collisionState: { ...collisionConfig },
+      orbiters: orbiters.map((orbiter, index) => ({
+        ...orbiter,
+        id: orbiter.id ?? `orbiter-${index}`,
+        visual: { ...(orbiter.visual ?? {}) },
+        brickContacts: new Set(),
+      })),
       visual: { ...visual },
       brickContacts: new Set(),
       attached: false,

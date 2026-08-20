@@ -3,6 +3,7 @@ import { GAME } from '../config.js';
 
 const PALETTE = ['#55e8ff', '#718bff', '#9b6cff', '#d760dc', '#ff5cab', '#ff796d', '#ffad5a'];
 const randomBetween = (min, max) => min + Math.random() * (max - min);
+const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 
 function cross(origin, a, b) {
   return (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x);
@@ -153,7 +154,9 @@ export class BrickFieldSystem {
   }
 
   #spawnClearRefillRow() {
-    const laneWidth = (GAME.width - 34) / GAME.brick.clearRefillCount;
+    const laneWidth = (
+      GAME.width - GAME.brick.spawnSideMargin * 2
+    ) / GAME.brick.clearRefillCount;
     const bricks = [];
     for (let lane = 0; lane < GAME.brick.clearRefillCount; lane += 1) {
       const width = randomBetween(GAME.brick.minWidth * .78, Math.min(GAME.brick.maxWidth * .82, laneWidth - 10));
@@ -209,14 +212,18 @@ export class BrickFieldSystem {
 
   #spawnBrick(lane, y, options = {}) {
     const laneCount = options.laneCount ?? 9;
-    const laneWidth = (GAME.width - 34) / laneCount;
+    const sideMargin = GAME.brick.spawnSideMargin;
+    const laneWidth = (GAME.width - sideMargin * 2) / laneCount;
     const dimensions = options.width === undefined || options.height === undefined
       ? selectBrickDimensions()
       : {};
     const width = options.width ?? dimensions.width;
     const height = options.height ?? dimensions.height;
     const horizontalJitter = options.horizontalJitter ?? 8;
-    const x = options.x ?? 17 + lane * laneWidth + (laneWidth - width) / 2 + randomBetween(-horizontalJitter, horizontalJitter);
+    const proposedX = options.x
+      ?? sideMargin + lane * laneWidth + (laneWidth - width) / 2
+        + randomBetween(-horizontalJitter, horizontalJitter);
+    const x = clamp(proposedX, sideMargin, GAME.width - sideMargin - width);
     const hitPoints = options.hitPoints ?? selectBrickHitPoints({
       elapsed: this.elapsed,
       score: this.scene.score,
