@@ -103,8 +103,43 @@ export class Brick extends Entity {
 }
 
 export class Particle extends Entity {
-  constructor({ x, y, velocityX, velocityY, color, life = .45, size = 3 }) {
-    super('particle', { x, y, velocityX, velocityY, color, life, maxLife: life, size });
+  constructor({
+    x, y, velocityX, velocityY, color,
+    life = .45,
+    size = 3,
+    style = 'square',
+    length = 8,
+    gravity = 90,
+    drag = .985,
+  }) {
+    super('particle', {
+      x, y, velocityX, velocityY, color,
+      life, maxLife: life, size, style, length, gravity, drag,
+    });
+  }
+}
+
+export class ImpactWave extends Entity {
+  constructor({
+    x, y, radius = 28, startRadius = 3, color = '#55e8ff',
+    secondaryColor = '#ffffff', life = .3, variant = 'hit',
+  }) {
+    super('impact-wave', {
+      x, y, radius, startRadius, color, secondaryColor,
+      life, maxLife: life, variant,
+    });
+  }
+}
+
+export class BrickShard extends Entity {
+  constructor({
+    x, y, points, velocityX, velocityY, color,
+    life = .72, rotation = 0, angularVelocity = 0,
+  }) {
+    super('brick-shard', {
+      x, y, points, velocityX, velocityY, color,
+      life, maxLife: life, rotation, angularVelocity,
+    });
   }
 }
 

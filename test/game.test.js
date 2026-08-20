@@ -293,7 +293,7 @@ test('天顶增援有25%概率追加一颗双倍速度的顶部球', () => {
   const regularSpeed = Math.hypot(regularLaunch.ball.velocityX, regularLaunch.ball.velocityY);
   const topSpeed = Math.hypot(topLaunch.ball.velocityX, topLaunch.ball.velocityY);
   assert.ok(Math.abs(topSpeed / regularSpeed - GAME.upgrade.topLaunchSpeedMultiplier) < .0001);
-  assert.equal(scene.world.all('particle').length, 20);
+  assert.equal(scene.world.all('particle').length, 14);
   assert.equal(scene.upgrades.options().some((option) => option.id === 'topLaunch'), false);
   scene.exit();
 });
@@ -355,8 +355,51 @@ test('爆裂核心有25%概率发射带周期范围伤害和独特外观的球',
   assert.equal(target.hitPoints, 9);
   if (farBrick) assert.equal(farBrick.hitPoints, 10);
   assert.equal(scene.world.all('blast-wave').length, 1);
-  assert.ok(scene.world.all('particle').length >= 26);
+  assert.ok(scene.world.all('particle').length >= 17);
   assert.equal(scene.upgrades.options().some((option) => option.id === 'blastLaunch'), false);
+  scene.exit();
+});
+
+test('方块命中生成轻量冲击火花，普通击杀生成单层冲击波与有限碎片', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  const brick = scene.world.first('brick');
+  const ball = scene.ballFactory.createPrimary({
+    x: brick.x + brick.width,
+    y: brick.y + brick.height / 2,
+    angle: Math.PI,
+  });
+  brick.hitPoints = 2;
+  brick.maxHitPoints = 2;
+  const contact = { normal: { nx: 1, ny: 0, depth: 1 } };
+
+  scene.ballCombat.applyDamage({ ball, brick, damage: 1, contact });
+  scene.world.flush();
+  assert.equal(scene.world.all('impact-wave').length, 1);
+  assert.equal(scene.world.all('brick-shard').length, 0);
+  assert.equal(scene.world.all('particle').length, 5);
+  assert.ok(scene.world.all('particle').every((particle) => particle.style === 'streak'));
+
+  scene.ballCombat.applyDamage({ ball, brick, damage: 1, contact });
+  scene.world.flush();
+  assert.equal(scene.world.all('impact-wave').length, 2);
+  assert.equal(scene.world.all('brick-shard').length, Math.min(5, brick.points.length));
+  assert.ok(scene.world.all('particle').length > 15);
+  assert.ok(scene.effects.shake >= 3);
+  assert.ok(scene.effects.flash >= .08);
+
+  const shard = scene.world.first('brick-shard');
+  const previousX = shard.x;
+  scene.effects.update(.1);
+  assert.notEqual(shard.x, previousX);
+  assert.ok(shard.rotation !== 0);
   scene.exit();
 });
 
