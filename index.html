@@ -42,6 +42,11 @@
 
         <div id="stage" class="stage">
           <canvas id="game-canvas" width="960" height="600" aria-label="游戏画布"></canvas>
+          <div id="combo-indicator" class="combo-indicator is-hidden" aria-live="polite">
+            <span id="combo-count" class="combo-count">2 COMBO</span>
+            <span id="combo-multiplier" class="combo-multiplier">×1.25 SCORE</span>
+            <span class="combo-timer" aria-hidden="true"></span>
+          </div>
           <div id="game-overlay" class="game-overlay">
             <p id="overlay-kicker" class="overlay-kicker">SYSTEM READY</p>
             <h1 id="overlay-title">准备击破</h1>

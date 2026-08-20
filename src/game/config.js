@@ -6,6 +6,11 @@ export const GAME = Object.freeze({
   paddle: { width: 124, height: 15, y: 552, speed: 650 },
   ball: { radius: 7, speed: 370, maxSpeed: 620 },
   autoFireInterval: 5,
+  combo: {
+    windowSeconds: 3,
+    multiplierPerKill: 0.25,
+    maximumMultiplier: 5,
+  },
   upgrade: {
     scoreInterval: 2000,
     rapidFireMultiplier: 0.86,
@@ -19,12 +24,12 @@ export const GAME = Object.freeze({
     randomLaunchMinAngle: 0.35,
   },
   brick: {
-    minWidth: 48,
-    maxWidth: 86,
-    minHeight: 30,
-    maxHeight: 58,
-    initialSpeed: 9,
-    maxSpeed: 34,
+    minWidth: 54,
+    maxWidth: 94,
+    minHeight: 34,
+    maxHeight: 64,
+    initialSpeed: 7.5,
+    maxSpeed: 30,
     initialSpawnInterval: 2.7,
     minSpawnInterval: 1.15,
     healthFormula: {

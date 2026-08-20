@@ -14,6 +14,9 @@ export class GameUI {
     this.primaryLabel = document.querySelector('#primary-button-label');
     this.upgradeOverlay = document.querySelector('#upgrade-overlay');
     this.upgradeOptions = document.querySelector('#upgrade-options');
+    this.comboIndicator = document.querySelector('#combo-indicator');
+    this.comboCount = document.querySelector('#combo-count');
+    this.comboMultiplier = document.querySelector('#combo-multiplier');
     this.pauseButton = document.querySelector('#pause-button');
     this.soundButton = document.querySelector('#sound-button');
     this.#bind();
@@ -53,6 +56,8 @@ export class GameUI {
       this.audio.play(520, .12, .035);
       if (pendingChoices === 0) this.#hideUpgrades();
     });
+    events.on('combo:changed', (combo) => this.#updateCombo(combo));
+    events.on('combo:ended', () => this.#hideCombo());
   }
 
   updateStats({ score, balls, nextShot }) {
@@ -88,6 +93,22 @@ export class GameUI {
     this.upgradeOverlay.classList.add('is-hidden');
     this.upgradeOverlay.setAttribute('aria-hidden', 'true');
   }
+
+  #updateCombo({ count, multiplier, windowSeconds }) {
+    if (count < 2) { this.#hideCombo(); return; }
+    this.comboCount.textContent = `${count} COMBO`;
+    this.comboMultiplier.textContent = `×${multiplier.toFixed(2)} SCORE`;
+    this.comboIndicator.style.setProperty('--combo-window', `${windowSeconds}s`);
+    const timer = this.comboIndicator.querySelector('.combo-timer');
+    timer.style.animationDuration = `${windowSeconds}s`;
+    timer.style.animationName = 'none';
+    this.comboIndicator.classList.remove('is-hidden', 'is-pulsing');
+    void timer.offsetWidth;
+    timer.style.animationName = 'combo-drain';
+    this.comboIndicator.classList.add('is-pulsing');
+  }
+
+  #hideCombo() { this.comboIndicator.classList.add('is-hidden'); }
 
   #formatTime(seconds) {
     const minutes = Math.floor(seconds / 60);

@@ -66,12 +66,16 @@ src/
 - **底线回响**：球落底时每级增加 20% 向上反弹概率，最多 3 级；满级概率为 60%。
 
 这些参数都集中在 `config.js` 的 `GAME.upgrade`。前三项可无限重复选择，后两项具有三级上限。
+
+## 连击计分
+
+击杀方块后会开启 3 秒连击窗口，每次后续击杀都会刷新窗口。第一杀为基础分，第二杀起每次连击增加 0.25 倍得分，默认最高 5 倍。窗口时长、每杀倍率和倍率上限位于 `config.js` 的 `GAME.combo`。
 - **新道具/敌人**：新增 Entity 和 System，在 `BreakoutScene.systems` 注册；不需要改动引擎循环。
 - **新模式**：新增 Scene，实现 `enter / update / render / exit`，交给 `engine.setScene()`。
 - **跨玩法模块**：使用插件。插件可实现 `install(context)`、`beforeUpdate(dt)`、`afterUpdate(dt)`、`afterRender(ctx)`、`dispose()`。
 - **UI/成就/存档**：订阅事件总线，避免把平台能力写进物理或实体代码。
 - **多球**：物理层已经按球集合运行；直接向 `world` 添加新的 `Ball` 即可。
 
-现有事件包括 `game:started`、`game:stats`、`game:lost`、`ball:launched`、`ball:bounce`、`ball:lost`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`engine:paused` 和 `engine:resumed`。
+现有事件包括 `game:started`、`game:stats`、`game:lost`、`ball:launched`、`ball:bounce`、`ball:lost`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
 
 开发控制台可通过 `window.breakout.engine` 与 `window.breakout.scene` 检查运行状态或挂载临时实验代码。

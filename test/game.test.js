@@ -6,6 +6,7 @@ import { GameEngine } from '../src/core/GameEngine.js';
 import { BreakoutScene } from '../src/game/BreakoutScene.js';
 import { GAME } from '../src/game/config.js';
 import { calculateExpectedBrickHitPoints, selectBrickHitPoints } from '../src/game/systems/BrickFieldSystem.js';
+import { ComboPlugin } from '../src/game/plugins/ComboPlugin.js';
 
 test('EventBus 支持 once 和主动解绑', () => {
   const events = new EventBus();
@@ -211,4 +212,30 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
   assert.equal(ball.active, true);
   assert.ok(ball.velocityY < 0);
   scene.exit();
+});
+
+test('连续三秒内击杀形成连击倍率，超时后清零', () => {
+  const events = new EventBus();
+  const context = { events, engine: { scene: { state: 'playing' } } };
+  let ended = 0;
+  events.on('combo:ended', () => { ended += 1; });
+  ComboPlugin.install(context);
+
+  events.emit('brick:destroyed');
+  assert.equal(ComboPlugin.combo, 1);
+  assert.equal(ComboPlugin.scoreMultiplier(), 1);
+  events.emit('brick:destroyed');
+  assert.equal(ComboPlugin.combo, 2);
+  assert.equal(ComboPlugin.scoreMultiplier(), 1.25);
+
+  ComboPlugin.afterUpdate(2.9, context);
+  events.emit('brick:destroyed');
+  assert.equal(ComboPlugin.combo, 3);
+  assert.equal(ComboPlugin.scoreMultiplier(), 1.5);
+
+  ComboPlugin.afterUpdate(3.01, context);
+  assert.equal(ComboPlugin.combo, 0);
+  assert.equal(ComboPlugin.scoreMultiplier(), 1);
+  assert.equal(ended, 1);
+  ComboPlugin.dispose();
 });

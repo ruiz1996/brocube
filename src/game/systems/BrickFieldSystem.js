@@ -71,7 +71,7 @@ export class BrickFieldSystem {
 
   update(dt) {
     this.elapsed += dt;
-    const speed = Math.min(GAME.brick.maxSpeed, GAME.brick.initialSpeed + this.elapsed * .16);
+    const speed = Math.min(GAME.brick.maxSpeed, GAME.brick.initialSpeed + this.elapsed * .14);
     for (const brick of this.scene.world.all('brick')) {
       brick.y += speed * dt;
       if (!this.breached && brick.bottom() >= GAME.playBottom) {
