@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070b18" />
+    <title>NEON BREAKER</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="brand-bar">
+        <a class="brand" href="#" aria-label="Neon Breaker 首页">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>NEON <b>BREAKER</b></span>
+        </a>
+        <div class="header-actions">
+          <button id="sound-button" class="icon-button" type="button" aria-label="开关音效" aria-pressed="false">
+            <span aria-hidden="true">◖))</span>
+          </button>
+          <button id="pause-button" class="icon-button" type="button" aria-label="暂停游戏">
+            <span aria-hidden="true">Ⅱ</span>
+          </button>
+        </div>
+      </header>
+
+      <section class="game-card" aria-label="打方块游戏">
+        <div class="status-bar">
+          <div class="status-item">
+            <span class="status-label">SCORE</span>
+            <strong id="score-value">000000</strong>
+          </div>
+          <div class="status-item status-center">
+            <span class="status-label">BALLS</span>
+            <strong id="balls-value">00</strong>
+          </div>
+          <div class="status-item status-right">
+            <span class="status-label">NEXT SHOT</span>
+            <strong id="shot-value">0.0s</strong>
+          </div>
+        </div>
+
+        <div id="stage" class="stage">
+          <canvas id="game-canvas" width="960" height="600" aria-label="游戏画布"></canvas>
+          <div id="game-overlay" class="game-overlay">
+            <p id="overlay-kicker" class="overlay-kicker">SYSTEM READY</p>
+            <h1 id="overlay-title">准备击破</h1>
+            <p id="overlay-copy">移动挡板拦截能量球，在多边形方块突破防线前尽可能生存。</p>
+            <button id="primary-button" class="primary-button" type="button">
+              <span id="primary-button-label">开始游戏</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          </div>
+          <div id="upgrade-overlay" class="upgrade-overlay is-hidden" aria-hidden="true">
+            <p class="overlay-kicker">POWER SIGNATURE DETECTED</p>
+            <h2>选择一项强化</h2>
+            <p class="upgrade-copy">强化可以重复选择，效果会持续叠加。</p>
+            <div id="upgrade-options" class="upgrade-options"></div>
+          </div>
+        </div>
+
+        <footer class="control-bar">
+          <span><kbd>A</kbd><kbd>D</kbd> 或 <kbd>←</kbd><kbd>→</kbd> 移动</span>
+          <span>每 <kbd>5 SEC</kbd> 自动发射</span>
+          <span><kbd>P</kbd> 暂停</span>
+        </footer>
+      </section>
+
+      <p class="tip"><span>TIP</span> 球掉落不会失败；阻止任意方块触碰粉色防线。</p>
+    </main>
+
+    <script>
+      if (location.protocol === 'file:') {
+        const button = document.querySelector('#primary-button');
+        document.querySelector('#overlay-kicker').textContent = 'LOCAL SERVER REQUIRED';
+        document.querySelector('#overlay-title').textContent = '请使用启动器';
+        document.querySelector('#overlay-copy').textContent = '浏览器会阻止直接打开本地模块。请关闭此页面，双击项目中的“启动游戏.cmd”。';
+        document.querySelector('#primary-button-label').textContent = '查看启动说明';
+        button.addEventListener('click', () => {
+          alert('请关闭此页面，然后双击游戏目录中的“启动游戏.cmd”。');
+        });
+      }
+    </script>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
