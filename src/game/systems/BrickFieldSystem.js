@@ -55,11 +55,31 @@ export function calculateExpectedBrickHitPoints({ elapsed, score }, formula = GA
     + formula.scoreCoefficient * normalizedScore ** formula.scoreExponent;
 }
 
-export function selectBrickHitPoints({ elapsed, score }, random = Math.random) {
+export function calculateBrickSizeHealthMultiplier(
+  { width, height },
+  bounds = GAME.brick,
+  formula = bounds.healthFormula,
+) {
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return 1;
+  const minimumArea = bounds.minWidth * bounds.minHeight;
+  const maximumArea = bounds.maxWidth * bounds.maxHeight;
+  const areaProgress = Math.max(0, Math.min(
+    1,
+    (width * height - minimumArea) / Math.max(1, maximumArea - minimumArea),
+  ));
+  const minimumMultiplier = formula.sizeMinMultiplier ?? 1;
+  const maximumMultiplier = formula.sizeMaxMultiplier ?? 1;
+  const weightedProgress = areaProgress ** (formula.sizeExponent ?? 1);
+  return minimumMultiplier
+    + (maximumMultiplier - minimumMultiplier) * weightedProgress;
+}
+
+export function selectBrickHitPoints({ elapsed, score, width, height }, random = Math.random) {
   const formula = GAME.brick.healthFormula;
   const expected = calculateExpectedBrickHitPoints({ elapsed, score }, formula);
+  const sizeMultiplier = calculateBrickSizeHealthMultiplier({ width, height }, GAME.brick, formula);
   const variation = (random() * 2 - 1) * formula.randomSpread;
-  return Math.max(formula.minHp, Math.round(expected + variation));
+  return Math.max(formula.minHp, Math.round(expected * sizeMultiplier + variation));
 }
 
 export class BrickFieldSystem {
@@ -77,7 +97,11 @@ export class BrickFieldSystem {
     this.breached = false;
     this.nextBossWave = GAME.brick.bossWaveInterval;
     const lanes = [1, 3, 5, 7, 2, 6, 4];
-    lanes.forEach((lane, index) => this.#spawnBrick(lane, 92 + Math.floor(index / 3) * 80 + Math.random() * 20));
+    lanes.forEach((lane, index) => this.#spawnBrick(
+      lane,
+      92 + Math.floor(index / 3) * 80 + Math.random() * 20,
+      { laneCount: GAME.brick.spawnLaneCount },
+    ));
   }
 
   update(dt) {
@@ -118,13 +142,13 @@ export class BrickFieldSystem {
   }
 
   #spawnBatch() {
-    const laneCount = 9;
+    const laneCount = GAME.brick.spawnLaneCount;
     const firstLane = Math.floor(Math.random() * laneCount);
-    this.#spawnBrick(firstLane, GAME.playTop + 13);
+    this.#spawnBrick(firstLane, GAME.playTop + 13, { laneCount });
     if (Math.random() < Math.min(.65, .22 + this.elapsed / 180)) {
       let secondLane = Math.floor(Math.random() * laneCount);
       if (secondLane === firstLane) secondLane = (secondLane + 3) % laneCount;
-      this.#spawnBrick(secondLane, GAME.playTop + 10);
+      this.#spawnBrick(secondLane, GAME.playTop + 10, { laneCount });
     }
   }
 
@@ -132,7 +156,7 @@ export class BrickFieldSystem {
     const laneWidth = (GAME.width - 34) / GAME.brick.clearRefillCount;
     const bricks = [];
     for (let lane = 0; lane < GAME.brick.clearRefillCount; lane += 1) {
-      const width = randomBetween(GAME.brick.minWidth * .78, Math.min(GAME.brick.maxWidth * .82, laneWidth - 14));
+      const width = randomBetween(GAME.brick.minWidth * .78, Math.min(GAME.brick.maxWidth * .82, laneWidth - 10));
       const height = randomBetween(GAME.brick.minHeight * .8, GAME.brick.maxHeight * .82);
       bricks.push(this.#spawnBrick(lane, GAME.playTop + 13, {
         laneCount: GAME.brick.clearRefillCount,
@@ -196,6 +220,8 @@ export class BrickFieldSystem {
     const hitPoints = options.hitPoints ?? selectBrickHitPoints({
       elapsed: this.elapsed,
       score: this.scene.score,
+      width,
+      height,
     });
     return this.scene.world.add(new Brick({
       x, y, width, height,

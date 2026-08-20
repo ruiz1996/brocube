@@ -6,11 +6,13 @@ import { GameEngine } from '../src/core/GameEngine.js';
 import { BreakoutScene } from '../src/game/BreakoutScene.js';
 import { GAME } from '../src/game/config.js';
 import {
+  calculateBrickSizeHealthMultiplier,
   calculateExpectedBrickHitPoints,
   selectBrickDimensions,
   selectBrickHitPoints,
 } from '../src/game/systems/BrickFieldSystem.js';
 import { calculateUpgradeScoreCost } from '../src/game/systems/UpgradeSystem.js';
+import { calculateUpgradeProgress } from '../src/ui/GameUI.js';
 import { ComboPlugin } from '../src/game/plugins/ComboPlugin.js';
 import { BASIC_BALL_ID, createDefaultBallDefinitions } from '../src/game/balls/BallDefinitionRegistry.js';
 import { BallFactory } from '../src/game/balls/BallFactory.js';
@@ -170,6 +172,10 @@ test('发射器可独立切换挡板发射和顶部发射', () => {
 });
 
 test('普通方块尺寸采样偏向横向扁长并保留随机范围', () => {
+  assert.ok(GAME.brick.minWidth >= 34 * 1.2);
+  assert.ok(GAME.brick.maxWidth >= 61 * 1.2);
+  assert.ok(GAME.brick.minHeight >= 26 * 1.2);
+  assert.ok(GAME.brick.maxHeight >= 46 * 1.2);
   const middle = selectBrickDimensions(() => .5);
   assert.ok(middle.width / middle.height > 1.5);
 
@@ -471,6 +477,20 @@ test('方块血量按可调公式随时间和分数无上限增长', () => {
   assert.ok(calculateExpectedBrickHitPoints({ elapsed: 600, score: 100000 }) > 15);
   assert.equal(selectBrickHitPoints({ elapsed: 0, score: 0 }, () => .5), 1);
 
+  const smallest = { width: GAME.brick.minWidth, height: GAME.brick.minHeight };
+  const largest = { width: GAME.brick.maxWidth, height: GAME.brick.maxHeight };
+  assert.equal(
+    calculateBrickSizeHealthMultiplier(smallest),
+    GAME.brick.healthFormula.sizeMinMultiplier,
+  );
+  assert.equal(
+    calculateBrickSizeHealthMultiplier(largest),
+    GAME.brick.healthFormula.sizeMaxMultiplier,
+  );
+  const smallHighRoll = selectBrickHitPoints({ elapsed: 0, score: 0, ...smallest }, () => 1);
+  const largeLowRoll = selectBrickHitPoints({ elapsed: 0, score: 0, ...largest }, () => 0);
+  assert.ok(largeLowRoll > smallHighRoll);
+
   const customFormula = {
     baseHp: 2,
     timeCoefficient: 2,
@@ -543,6 +563,19 @@ test('强化所需分数随已获得强化次数持续增加', () => {
   assert.equal(firstCost, GAME.upgrade.scoreInterval);
   assert.ok(secondCost > firstCost);
   assert.ok(tenthCost > secondCost * 2);
+
+  assert.deepEqual(
+    calculateUpgradeProgress({ score: firstCost / 2, progressStart: 0, nextScore: firstCost }),
+    { earned: firstCost / 2, required: firstCost, ratio: 0.5 },
+  );
+  assert.deepEqual(
+    calculateUpgradeProgress({
+      score: firstCost + secondCost / 4,
+      progressStart: firstCost,
+      nextScore: firstCost + secondCost,
+    }),
+    { earned: secondCost / 4, required: secondCost, ratio: 0.25 },
+  );
 });
 
 test('范围伤害跨过强化阈值后，同次多杀仍会完整计分', () => {

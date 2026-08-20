@@ -94,6 +94,7 @@ export class BreakoutScene {
       nextShot: Math.max(0, this.autoFire?.timeUntilShot ?? 0),
       elapsed: this.brickField?.elapsed ?? 0,
       upgrades: { ...this.upgrades.levels },
+      upgradeProgressStart: this.upgrades.progressStartScore,
       nextUpgradeScore: this.upgrades.nextScore,
       earnedUpgradeChoices: this.upgrades.earnedChoices,
       state: this.state,

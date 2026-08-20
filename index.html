@@ -39,6 +39,20 @@
             <strong id="shot-value">0.0s</strong>
           </div>
         </div>
+        <div class="upgrade-progress" aria-label="强化选择进度">
+          <span class="upgrade-progress-label">NEXT UPGRADE</span>
+          <span
+            id="upgrade-progress-track"
+            class="upgrade-progress-track"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+          >
+            <span id="upgrade-progress-fill" class="upgrade-progress-fill"></span>
+          </span>
+          <span id="upgrade-progress-value" class="upgrade-progress-value">0 / 2000</span>
+        </div>
 
         <div id="stage" class="stage">
           <canvas id="game-canvas" width="600" height="900" aria-label="竖向打方块游戏画布"></canvas>

@@ -105,6 +105,10 @@ export class UpgradeSystem {
     );
   }
 
+  get progressStartScore() {
+    return this.nextScore - calculateUpgradeScoreCost(this.earnedChoices);
+  }
+
   check(score) {
     while (score >= this.nextScore) {
       this.pendingChoices += 1;
