@@ -84,7 +84,7 @@ export class BallPhysicsSystem {
 
   update(dt) {
     const { world, events } = this.scene;
-    const paddle = world.first('paddle');
+    const paddles = world.all('paddle');
 
     for (const ball of world.all('ball')) {
       if (ball.attached) continue;
@@ -110,9 +110,10 @@ export class BallPhysicsSystem {
         events.emit('ball:bounce', { ball, surface: 'wall' });
       }
 
-      if (paddle && ball.velocityY > 0) {
-        const collision = circleAabb(ball, paddle);
-        if (collision) {
+      if (ball.velocityY > 0) {
+        for (const paddle of paddles) {
+          const collision = circleAabb(ball, paddle);
+          if (!collision) continue;
           const relativeHit = clamp((ball.x - (paddle.x + paddle.width / 2)) / (paddle.width / 2), -1, 1);
           const maximumSpeed = GAME.ball.maxSpeed * this.scene.upgrades.ballSpeedMultiplier;
           const speed = Math.min(maximumSpeed, Math.hypot(ball.velocityX, ball.velocityY) * 1.012);
@@ -120,7 +121,8 @@ export class BallPhysicsSystem {
           ball.velocityX = Math.sin(angle) * speed + paddle.velocityX * .06;
           ball.velocityY = -Math.abs(Math.cos(angle) * speed);
           ball.y = paddle.y - ball.radius - .5;
-          events.emit('ball:bounce', { ball, surface: 'paddle', strength: relativeHit });
+          events.emit('ball:bounce', { ball, paddle, surface: 'paddle', strength: relativeHit });
+          break;
         }
       }
 

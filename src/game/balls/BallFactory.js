@@ -16,6 +16,8 @@ export class BallFactory {
     visualOverrides = {},
     periodicEffects = [],
     orbitingDamageOverrides = {},
+    guidanceOverrides = {},
+    damageEffectConfigOverrides = {},
   }) {
     const definition = this.definitions.get(definitionId);
     return this.#create({
@@ -30,6 +32,8 @@ export class BallFactory {
       visualOverrides,
       periodicEffects: [...definition.periodicEffects, ...periodicEffects],
       orbitingDamageOverrides,
+      guidanceOverrides,
+      damageEffectConfigOverrides,
     });
   }
 
@@ -51,6 +55,7 @@ export class BallFactory {
       periodicEffects: [],
       collisionPolicy: 'bounce',
       collisionConfig: {},
+      guidance: null,
       orbiters: [],
       visual: { ...basic.visual, trailLength: Math.min(5, basic.visual.trailLength) },
     });
@@ -68,6 +73,8 @@ export class BallFactory {
     visualOverrides = {},
     periodicEffects = [],
     orbitingDamageOverrides = {},
+    guidanceOverrides = {},
+    damageEffectConfigOverrides = {},
   }) {
     return new Ball({
       definitionId,
@@ -83,7 +90,7 @@ export class BallFactory {
       contactDamage: definition.contactDamage,
       damageEffects: definition.damageEffects.map((effect) => ({
         id: effect.id,
-        config: { ...effect.config },
+        config: { ...effect.config, ...(damageEffectConfigOverrides[effect.id] ?? {}) },
       })),
       periodicEffects: periodicEffects.map((effect) => ({
         id: effect.id,
@@ -93,6 +100,7 @@ export class BallFactory {
       })),
       collisionPolicy: definition.collisionPolicy,
       collisionConfig: { ...definition.collisionConfig },
+      guidance: definition.guidance ? { ...definition.guidance, ...guidanceOverrides } : null,
       orbiters: this.#createOrbiters(definition.orbitingDamage, orbitingDamageOverrides),
       visual: { ...definition.visual, ...visualOverrides },
     });

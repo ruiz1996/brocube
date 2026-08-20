@@ -7,7 +7,8 @@ export class PaddleSystem {
 
   update(dt) {
     const { input, world } = this.scene;
-    const paddle = world.first('paddle');
+    const paddles = world.all('paddle');
+    const paddle = paddles.find(({ role }) => role === 'primary') ?? paddles[0];
     if (!paddle) return;
     const previousX = paddle.x;
     let direction = 0;
@@ -20,6 +21,17 @@ export class PaddleSystem {
     }
     paddle.x = clamp(paddle.x, 14, GAME.width - paddle.width - 14);
     paddle.velocityX = (paddle.x - previousX) / dt;
+
+    for (const secondary of paddles) {
+      if (secondary === paddle) continue;
+      secondary.width = paddle.width * GAME.upgrade.doublePaddleWidthRatio;
+      secondary.x = clamp(
+        paddle.x + paddle.width / 2 - secondary.width / 2,
+        14,
+        GAME.width - secondary.width - 14,
+      );
+      secondary.velocityX = paddle.velocityX;
+    }
 
     for (const ball of world.all('ball')) {
       if (!ball.attached) continue;

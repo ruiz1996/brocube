@@ -1,4 +1,4 @@
-import { BlastWave, Particle } from '../entities/entities.js';
+import { BlastWave, LightningArc, Particle } from '../entities/entities.js';
 
 export class EffectsSystem {
   constructor(scene) {
@@ -18,6 +18,9 @@ export class EffectsSystem {
         this.scene.world.add(new BlastWave({ x, y, radius, color, secondaryColor }));
         this.burst(x, y, color, 18);
         this.burst(x, y, secondaryColor, 8);
+      }),
+      scene.events.on('ball:lightning-chain', ({ points }) => {
+        this.scene.world.add(new LightningArc({ points }));
       }),
     ];
   }
@@ -48,6 +51,10 @@ export class EffectsSystem {
     for (const wave of this.scene.world.all('blast-wave')) {
       wave.life -= dt;
       if (wave.life <= 0) wave.destroy();
+    }
+    for (const arc of this.scene.world.all('lightning-arc')) {
+      arc.life -= dt;
+      if (arc.life <= 0) arc.destroy();
     }
   }
 

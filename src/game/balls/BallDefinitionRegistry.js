@@ -2,6 +2,8 @@ import { GAME, COLORS } from '../config.js';
 
 export const BASIC_BALL_ID = 'basic';
 export const VOID_ORBIT_BALL_ID = 'void-orbit';
+export const MICRO_NAVIGATION_BALL_ID = 'micro-navigation';
+export const LIGHTNING_BALL_ID = 'lightning';
 
 function normalizeDamageEffect(effect) {
   if (typeof effect === 'string') return { id: effect, config: {} };
@@ -54,6 +56,10 @@ export class BallDefinitionRegistry {
       periodicEffects: (definition.periodicEffects ?? []).map(normalizePeriodicEffect),
       collisionPolicy: definition.collisionPolicy ?? 'bounce',
       collisionConfig: { ...(definition.collisionConfig ?? {}) },
+      guidance: definition.guidance ? {
+        strength: Math.max(0, definition.guidance.strength ?? 0),
+        range: Math.max(0, definition.guidance.range ?? Infinity),
+      } : null,
       orbitingDamage: normalizeOrbitingDamage(definition.orbitingDamage),
       visual: {
         renderer: 'orb',
@@ -106,6 +112,43 @@ export function createDefaultBallDefinitions() {
       innerColor: '#24103f',
       trailColor: '#7c4bc7',
       trailLength: 10,
+    },
+  }).register(MICRO_NAVIGATION_BALL_ID, {
+    damage: 1,
+    damageType: 'kinetic',
+    collisionPolicy: 'bounce',
+    guidance: {
+      strength: GAME.upgrade.navigationStrength,
+      range: GAME.upgrade.navigationRange,
+    },
+    visual: {
+      renderer: 'micro-navigation',
+      color: '#4fffc2',
+      coreColor: '#f3fffb',
+      innerColor: '#72ffd3',
+      trailColor: '#20b98d',
+      trailLength: 11,
+    },
+  }).register(LIGHTNING_BALL_ID, {
+    damage: 0,
+    damageType: 'electric',
+    contactDamage: false,
+    damageEffects: [{
+      id: 'chain-lightning',
+      config: {
+        damage: GAME.upgrade.lightningDamage,
+        additionalTargets: GAME.upgrade.lightningAdditionalTargets,
+        range: GAME.upgrade.lightningRange,
+      },
+    }],
+    collisionPolicy: 'bounce',
+    visual: {
+      renderer: 'lightning',
+      color: '#5dc8ff',
+      coreColor: '#ffffff',
+      innerColor: '#d4f5ff',
+      trailColor: '#6e7cff',
+      trailLength: 13,
     },
   });
 }

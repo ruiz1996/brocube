@@ -11,7 +11,7 @@ export class BallCombatSystem {
     const damageResult = dealsContactDamage
       ? this.applyDamage({ ball, brick, damage: ball.damage, contact })
       : { damage: 0, destroyed: false };
-    if (dealsContactDamage) {
+    if (ball.damageEffects.length > 0) {
       this.scene.ballBehaviors.runDamageEffects(ball.damageEffects, {
         scene: this.scene,
         world: this.scene.world,
@@ -33,6 +33,9 @@ export class BallCombatSystem {
       contact,
       ...damageResult,
     });
+    if (collisionResult.action === 'bounce') {
+      this.scene.events.emit('ball:bounce', { ball, brick, surface: 'brick' });
+    }
     return { ...damageResult, ...collisionResult };
   }
 

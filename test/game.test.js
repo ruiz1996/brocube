@@ -17,6 +17,8 @@ import { calculateUpgradeProgress } from '../src/ui/GameUI.js';
 import { ComboPlugin } from '../src/game/plugins/ComboPlugin.js';
 import {
   BASIC_BALL_ID,
+  LIGHTNING_BALL_ID,
+  MICRO_NAVIGATION_BALL_ID,
   VOID_ORBIT_BALL_ID,
   createDefaultBallDefinitions,
 } from '../src/game/balls/BallDefinitionRegistry.js';
@@ -330,7 +332,128 @@ test('挡板每三秒自动发射一颗新球', () => {
   scene.exit();
 });
 
-test('天顶增援有25%概率追加一颗双倍速度的顶部球', () => {
+test('五连速射概率可强化三级，触发后按短间隔共发射五颗球', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  const launches = [];
+  const volleys = [];
+  events.on('ball:launched', (payload) => launches.push(payload));
+  events.on('ball:rapid-volley', (payload) => volleys.push(payload));
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  for (let level = 0; level < GAME.upgrade.rapidVolleyMaxLevel; level += 1) {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+    assert.equal(scene.chooseUpgrade('rapidVolley'), true);
+  }
+  assert.ok(Math.abs(
+    scene.upgrades.rapidVolleyChance
+      - GAME.upgrade.rapidVolleyChancePerLevel * GAME.upgrade.rapidVolleyMaxLevel,
+  ) < .0001);
+  assert.equal(scene.upgrades.isAvailable('rapidVolley'), false);
+
+  scene.autoFire.random = () => 0;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  for (let index = 1; index < GAME.upgrade.rapidVolleyBallCount; index += 1) {
+    scene.update(GAME.upgrade.rapidVolleyShotInterval + .001);
+  }
+  assert.equal(volleys.length, 1);
+  assert.equal(volleys[0].count, GAME.upgrade.rapidVolleyBallCount);
+  assert.equal(launches.length, GAME.upgrade.rapidVolleyBallCount);
+  assert.ok(launches.every(({ source }) => source === 'automatic'));
+  scene.exit();
+});
+
+test('双重挡板创建半宽同步副挡板，并参与球反弹', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, x: 0, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  scene.upgrades.waitingForChoice = true;
+  scene.upgrades.pendingChoices = 1;
+  scene.state = 'upgrading';
+  assert.equal(scene.chooseUpgrade('doublePaddle'), true);
+  scene.world.flush();
+
+  const primary = scene.world.all('paddle').find(({ role }) => role === 'primary');
+  const secondary = scene.world.all('paddle').find(({ role }) => role === 'secondary');
+  assert.ok(secondary);
+  assert.equal(secondary.width, primary.width * GAME.upgrade.doublePaddleWidthRatio);
+  assert.equal(primary.y - secondary.y, GAME.upgrade.doublePaddleVerticalOffset);
+  assert.equal(scene.upgrades.isAvailable('doublePaddle'), false);
+
+  input.pointer.active = true;
+  input.pointer.x = 430;
+  scene.update(.05);
+  assert.ok(Math.abs(
+    secondary.x + secondary.width / 2 - (primary.x + primary.width / 2),
+  ) < .0001);
+
+  const ball = scene.ballFactory.createPrimary({
+    x: secondary.x + secondary.width / 2,
+    y: secondary.y - GAME.ball.radius + 1,
+    angle: Math.PI / 2,
+    speed: 100,
+  });
+  scene.world.add(ball);
+  scene.world.flush();
+  scene.ballPhysics.update(0);
+  assert.ok(ball.velocityY < 0);
+  scene.exit();
+});
+
+test('所有已解锁特殊球与普通球各占一个等概率替代槽位', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  const launches = [];
+  events.on('ball:launched', (payload) => launches.push(payload));
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  for (const id of ['topLaunch', 'blastLaunch', 'voidOrbit', 'microNavigation', 'lightning']) {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+    assert.equal(scene.chooseUpgrade(id), true);
+  }
+
+  const expectedTypes = [
+    'basic', 'top-launch', 'blast-launch', 'void-orbit', 'micro-navigation', 'lightning',
+  ];
+  assert.deepEqual(
+    scene.autoFire.availablePrimaryShots().map(({ shotType }) => shotType),
+    expectedTypes,
+  );
+
+  for (let index = 0; index < expectedTypes.length; index += 1) {
+    scene.autoFire.random = () => (index + .1) / expectedTypes.length;
+    scene.autoFire.timeUntilShot = 0;
+    scene.update(1 / 120);
+  }
+  assert.deepEqual(
+    launches.map(({ source }) => source),
+    ['automatic', 'top-launch', 'blast-launch', 'void-orbit', 'micro-navigation', 'lightning'],
+  );
+  assert.equal(launches.length, expectedTypes.length);
+  scene.exit();
+});
+
+test('天顶增援与普通球等概率替代，并从顶部发射双倍速度球', () => {
   const events = new EventBus();
   const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
   const scene = new BreakoutScene();
@@ -346,31 +469,28 @@ test('天顶增援有25%概率追加一颗双倍速度的顶部球', () => {
   scene.state = 'upgrading';
   assert.equal(scene.chooseUpgrade('topLaunch'), true);
   assert.equal(scene.upgrades.levels.topLaunch, 1);
-  assert.equal(scene.upgrades.topLaunchChance, .25);
+  assert.deepEqual(scene.autoFire.availablePrimaryShots().map(({ shotType }) => shotType), ['basic', 'top-launch']);
 
-  scene.autoFire.random = () => 0;
+  scene.autoFire.random = () => .99;
   scene.autoFire.timeUntilShot = 0;
   scene.update(1 / 120);
-  assert.equal(launches.length, 2);
+  assert.equal(launches.length, 1);
 
-  const regularLaunch = launches.find(({ emitterId }) => emitterId === 'paddle');
   const topLaunch = launches.find(({ emitterId }) => emitterId === 'top');
-  assert.ok(regularLaunch);
   assert.equal(topLaunch.source, 'top-launch');
   assert.equal(topLaunch.ball.launchSource, 'top-launch');
   assert.ok(topLaunch.ball.velocityY > 0);
   assert.equal(topLaunch.ball.visual.renderer, 'top-launch');
   assert.equal(topLaunch.ball.visual.color, '#ffad5a');
   assert.equal(topLaunch.ball.visual.trailLength, 16);
-  const regularSpeed = Math.hypot(regularLaunch.ball.velocityX, regularLaunch.ball.velocityY);
   const topSpeed = Math.hypot(topLaunch.ball.velocityX, topLaunch.ball.velocityY);
-  assert.ok(Math.abs(topSpeed / regularSpeed - GAME.upgrade.topLaunchSpeedMultiplier) < .0001);
+  assert.ok(Math.abs(topSpeed / GAME.ball.speed - GAME.upgrade.topLaunchSpeedMultiplier) < .0001);
   assert.equal(scene.world.all('particle').length, 20);
   assert.equal(scene.upgrades.options().some((option) => option.id === 'topLaunch'), false);
   scene.exit();
 });
 
-test('爆裂核心有25%概率发射带周期范围伤害和独特外观的球', () => {
+test('爆裂核心替代普通球并带有周期范围伤害和独特外观', () => {
   const events = new EventBus();
   const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
   const scene = new BreakoutScene();
@@ -388,12 +508,11 @@ test('爆裂核心有25%概率发射带周期范围伤害和独特外观的球',
   scene.state = 'upgrading';
   assert.equal(scene.chooseUpgrade('blastLaunch'), true);
   assert.equal(scene.upgrades.levels.blastLaunch, 1);
-  assert.equal(scene.upgrades.blastLaunchChance, .25);
 
-  scene.autoFire.random = () => 0;
+  scene.autoFire.random = () => .99;
   scene.autoFire.timeUntilShot = 0;
   scene.update(1 / 120);
-  assert.equal(launches.length, 2);
+  assert.equal(launches.length, 1);
   const blastLaunch = launches.find(({ source }) => source === 'blast-launch');
   assert.ok(blastLaunch);
   assert.equal(blastLaunch.emitterId, 'paddle');
@@ -447,9 +566,8 @@ test('虚空双星由核心负责反弹死亡，两颗子球独立造成接触�
   scene.upgrades.pendingChoices = 1;
   scene.state = 'upgrading';
   assert.equal(scene.chooseUpgrade('voidOrbit'), true);
-  assert.equal(scene.upgrades.voidOrbitChance, GAME.upgrade.voidOrbitChance);
 
-  scene.autoFire.random = () => 0;
+  scene.autoFire.random = () => .99;
   scene.autoFire.timeUntilShot = 0;
   scene.update(1 / 120);
   const voidLaunch = launches.find(({ source }) => source === 'void-orbit');
@@ -527,7 +645,7 @@ test('虚空超旋需要虚空双星前置，最多三级并作用于现有及�
   assert.equal(scene.chooseUpgrade('voidOrbit'), true);
   assert.equal(scene.upgrades.isAvailable('voidOrbitSpeed'), true);
 
-  scene.autoFire.random = () => 0;
+  scene.autoFire.random = () => .99;
   scene.autoFire.timeUntilShot = 0;
   scene.update(1 / 120);
   const existingVoidBall = scene.world.all('ball').find((ball) => ball.launchSource === 'void-orbit');
@@ -557,6 +675,150 @@ test('虚空超旋需要虚空双星前置，最多三级并作用于现有及�
   scene.exit();
 });
 
+test('微导航每次反弹只锁定一个附近目标，导航增幅最多强化三级', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  const prepareChoice = () => {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+  };
+
+  assert.equal(scene.upgrades.isAvailable('navigationStrength'), false);
+  prepareChoice();
+  assert.equal(scene.chooseUpgrade('microNavigation'), true);
+  assert.equal(scene.upgrades.isAvailable('navigationStrength'), true);
+  scene.autoFire.random = () => .99;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+
+  const navigationBall = scene.world.all('ball').find(({ definitionId }) => definitionId === MICRO_NAVIGATION_BALL_ID);
+  assert.ok(navigationBall);
+  assert.equal(navigationBall.visual.renderer, 'micro-navigation');
+  assert.equal(navigationBall.guidance.strength, GAME.upgrade.navigationStrength);
+  const initialTarget = scene.world.first('brick');
+  navigationBall.x = initialTarget.x + initialTarget.width / 2 - 100;
+  navigationBall.y = initialTarget.y + initialTarget.height / 2;
+  navigationBall.velocityX = 0;
+  navigationBall.velocityY = -navigationBall.speed;
+  const angleBefore = Math.atan2(navigationBall.velocityY, navigationBall.velocityX);
+  scene.guidance.update(.1);
+  const angleAfter = Math.atan2(navigationBall.velocityY, navigationBall.velocityX);
+  assert.notEqual(angleAfter, angleBefore);
+  const firstTargetId = navigationBall.guidance.targetId;
+  assert.ok(firstTargetId);
+
+  const firstTarget = scene.world.all('brick').find(({ id }) => id === firstTargetId);
+  firstTarget.destroy();
+  scene.guidance.update(.1);
+  assert.equal(navigationBall.guidance.targetId, firstTargetId);
+  events.emit('ball:bounce', { ball: navigationBall, surface: 'wall' });
+  assert.notEqual(navigationBall.guidance.targetId, firstTargetId);
+
+  for (let level = 1; level <= GAME.upgrade.navigationStrengthMaxLevel; level += 1) {
+    prepareChoice();
+    assert.equal(scene.chooseUpgrade('navigationStrength'), true);
+    const expected = GAME.upgrade.navigationStrength
+      * GAME.upgrade.navigationStrengthMultiplierPerLevel ** level;
+    assert.ok(Math.abs(navigationBall.guidance.strength - expected) < .0001);
+  }
+  assert.equal(scene.upgrades.isAvailable('navigationStrength'), false);
+
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const navigationBalls = scene.world.all('ball')
+    .filter(({ definitionId }) => definitionId === MICRO_NAVIGATION_BALL_ID);
+  assert.equal(navigationBalls.length, 2);
+  assert.ok(Math.abs(
+    navigationBalls[1].guidance.strength - scene.upgrades.navigationStrength,
+  ) < .0001);
+  scene.exit();
+});
+
+test('闪电球以闪电链代替常规伤害，扩链强化增加额外目标且最多三级', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  const chains = [];
+  events.on('ball:lightning-chain', (payload) => chains.push(payload));
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  const prepareChoice = () => {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+  };
+
+  assert.equal(scene.upgrades.isAvailable('lightningJumps'), false);
+  prepareChoice();
+  assert.equal(scene.chooseUpgrade('lightning'), true);
+  scene.autoFire.random = () => .99;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const lightningBall = scene.world.all('ball').find(({ definitionId }) => definitionId === LIGHTNING_BALL_ID);
+  assert.ok(lightningBall);
+  assert.equal(lightningBall.contactDamage, false);
+  assert.equal(lightningBall.damage, 0);
+  assert.equal(lightningBall.visual.renderer, 'lightning');
+
+  const bricks = scene.world.all('brick');
+  const target = bricks[0];
+  const nearby = bricks[1];
+  nearby.x = target.x + 20;
+  nearby.y = target.y + 10;
+  for (const brick of bricks) {
+    brick.hitPoints = 10;
+    brick.maxHitPoints = 10;
+  }
+  lightningBall.velocityX = 100;
+  lightningBall.velocityY = 0;
+  const result = scene.ballCombat.resolveBrickCollision({
+    ball: lightningBall,
+    brick: target,
+    normal: { nx: -1, ny: 0, depth: 1 },
+  });
+  assert.equal(result.damage, 0);
+  assert.equal(target.hitPoints, 9);
+  assert.equal(chains.length, 1);
+  assert.equal(chains[0].targets.length, 2);
+  assert.equal(chains[0].targets[1].hitPoints, 9);
+  assert.ok(lightningBall.velocityX < 0);
+  scene.world.flush();
+  assert.equal(scene.world.all('lightning-arc').length, 1);
+
+  for (let level = 1; level <= GAME.upgrade.lightningJumpsMaxLevel; level += 1) {
+    prepareChoice();
+    assert.equal(scene.chooseUpgrade('lightningJumps'), true);
+    const effect = lightningBall.damageEffects.find(({ id }) => id === 'chain-lightning');
+    assert.equal(
+      effect.config.additionalTargets,
+      GAME.upgrade.lightningAdditionalTargets
+        + GAME.upgrade.lightningAdditionalTargetsPerLevel * level,
+    );
+  }
+  assert.equal(scene.upgrades.isAvailable('lightningJumps'), false);
+
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const lightningBalls = scene.world.all('ball')
+    .filter(({ definitionId }) => definitionId === LIGHTNING_BALL_ID);
+  assert.equal(lightningBalls.length, 2);
+  const futureEffect = lightningBalls[1].damageEffects.find(({ id }) => id === 'chain-lightning');
+  assert.equal(futureEffect.config.additionalTargets, scene.upgrades.lightningAdditionalTargets);
+  scene.exit();
+});
+
 test('特殊球进阶卡需要前置，爆裂增压会缩短现有与未来爆裂球间隔', () => {
   const events = new EventBus();
   const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
@@ -579,7 +841,7 @@ test('特殊球进阶卡需要前置，爆裂增压会缩短现有与未来爆�
   assert.equal(scene.chooseUpgrade('blastLaunch'), true);
   assert.equal(scene.upgrades.isAvailable('blastCooldown'), true);
 
-  scene.autoFire.random = () => 0;
+  scene.autoFire.random = () => .99;
   scene.autoFire.timeUntilShot = 0;
   scene.update(1 / 120);
   const firstBlast = scene.world.all('ball').find((ball) => ball.launchSource === 'blast-launch');
@@ -636,7 +898,7 @@ test('天顶续航在普通底线判定失败后为天顶球追加独立保留�
   assert.equal(scene.chooseUpgrade('topRecovery'), true);
   assert.equal(scene.upgrades.topRecoveryChance, GAME.upgrade.topRecoveryChancePerLevel);
 
-  scene.autoFire.random = () => 0;
+  scene.autoFire.random = () => .99;
   scene.autoFire.timeUntilShot = 0;
   scene.update(1 / 120);
   const topBall = scene.world.all('ball').find((ball) => ball.launchSource === 'top-launch');
@@ -898,6 +1160,18 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
   for (let level = 0; level < GAME.upgrade.voidOrbiterSpeedMaxLevel; level += 1) {
     chooseDirectly('voidOrbitSpeed');
   }
+  for (let level = 0; level < GAME.upgrade.rapidVolleyMaxLevel; level += 1) {
+    chooseDirectly('rapidVolley');
+  }
+  chooseDirectly('doublePaddle');
+  chooseDirectly('microNavigation');
+  for (let level = 0; level < GAME.upgrade.navigationStrengthMaxLevel; level += 1) {
+    chooseDirectly('navigationStrength');
+  }
+  chooseDirectly('lightning');
+  for (let level = 0; level < GAME.upgrade.lightningJumpsMaxLevel; level += 1) {
+    chooseDirectly('lightningJumps');
+  }
 
   const cappedUpgradeIds = [
     'paddleLength',
@@ -908,6 +1182,12 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
     'blastCooldown',
     'voidOrbit',
     'voidOrbitSpeed',
+    'rapidVolley',
+    'doublePaddle',
+    'microNavigation',
+    'navigationStrength',
+    'lightning',
+    'lightningJumps',
   ];
   for (const id of cappedUpgradeIds) assert.equal(scene.upgrades.isAvailable(id), false);
   for (let sample = 0; sample < 20; sample += 1) {

@@ -124,5 +124,51 @@ export function createDefaultBallBehaviors() {
     return payload;
   });
 
+  registry.registerDamageEffect('chain-lightning', ({ scene, combat, ball, brick, effectConfig }) => {
+    const damage = Math.max(0, effectConfig.damage ?? 1);
+    const additionalTargets = Math.max(0, Math.round(effectConfig.additionalTargets ?? 1));
+    const range = Math.max(1, effectConfig.range ?? 160);
+    const targets = [brick];
+    const points = [{ x: ball.x, y: ball.y }];
+    let previous = brick;
+
+    for (let index = 0; index <= additionalTargets; index += 1) {
+      if (index > 0) {
+        const previousX = previous.x + previous.width / 2;
+        const previousY = previous.y + previous.height / 2;
+        let nearest = null;
+        let nearestDistance = Infinity;
+        for (const candidate of scene.world.all('brick')) {
+          if (targets.includes(candidate)) continue;
+          const candidateX = candidate.x + candidate.width / 2;
+          const candidateY = candidate.y + candidate.height / 2;
+          const distance = Math.hypot(candidateX - previousX, candidateY - previousY);
+          if (distance > range || distance >= nearestDistance) continue;
+          nearest = candidate;
+          nearestDistance = distance;
+        }
+        if (!nearest) break;
+        previous = nearest;
+        targets.push(nearest);
+      }
+
+      points.push({
+        x: previous.x + previous.width / 2,
+        y: previous.y + previous.height / 2,
+      });
+      combat.applyDamage({
+        ball,
+        brick: previous,
+        damage,
+        damageType: 'electric',
+        cause: 'chain-lightning',
+      });
+    }
+
+    const payload = { ball, targets, points, damage, additionalTargets: targets.length - 1 };
+    scene.events.emit('ball:lightning-chain', payload);
+    return payload;
+  });
+
   return registry;
 }

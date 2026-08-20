@@ -2,13 +2,14 @@ import { Entity } from '../../core/Entity.js';
 import { GAME } from '../config.js';
 
 export class Paddle extends Entity {
-  constructor() {
+  constructor({ role = 'primary', x, y, width, height } = {}) {
     super('paddle', {
-      tags: ['collidable', 'player'],
-      x: (GAME.width - GAME.paddle.width) / 2,
-      y: GAME.paddle.y,
-      width: GAME.paddle.width,
-      height: GAME.paddle.height,
+      tags: ['collidable', 'player', role],
+      role,
+      x: x ?? (GAME.width - (width ?? GAME.paddle.width)) / 2,
+      y: y ?? GAME.paddle.y,
+      width: width ?? GAME.paddle.width,
+      height: height ?? GAME.paddle.height,
       velocityX: 0,
     });
   }
@@ -31,6 +32,7 @@ export class Ball extends Entity {
     periodicEffects = [],
     collisionPolicy = 'bounce',
     collisionConfig = {},
+    guidance = null,
     orbiters = [],
     visual = {},
   } = {}) {
@@ -65,6 +67,11 @@ export class Ball extends Entity {
       collisionPolicy,
       collisionConfig: { ...collisionConfig },
       collisionState: { ...collisionConfig },
+      guidance: guidance ? {
+        ...guidance,
+        targetId: null,
+        needsTarget: true,
+      } : null,
       orbiters: orbiters.map((orbiter, index) => ({
         ...orbiter,
         id: orbiter.id ?? `orbiter-${index}`,
@@ -125,6 +132,17 @@ export class BlastWave extends Entity {
       radius,
       color,
       secondaryColor,
+      life,
+      maxLife: life,
+    });
+  }
+}
+
+export class LightningArc extends Entity {
+  constructor({ points, color = '#78d7ff', life = .18 }) {
+    super('lightning-arc', {
+      points: points.map((point) => ({ ...point })),
+      color,
       life,
       maxLife: life,
     });

@@ -8,6 +8,7 @@ export class BreakoutRenderer {
     const { world } = this.scene;
     for (const brick of world.all('brick')) this.#brick(ctx, brick);
     for (const wave of world.all('blast-wave')) this.#blastWave(ctx, wave);
+    for (const arc of world.all('lightning-arc')) this.#lightningArc(ctx, arc);
     for (const particle of world.all('particle')) this.#particle(ctx, particle);
     for (const paddle of world.all('paddle')) this.#paddle(ctx, paddle);
     for (const ball of world.all('ball')) this.#ball(ctx, ball);
@@ -90,21 +91,26 @@ export class BreakoutRenderer {
 
   #paddle(ctx, paddle) {
     ctx.save();
-    ctx.shadowColor = COLORS.cyan;
-    ctx.shadowBlur = 18;
+    const isSecondary = paddle.role === 'secondary';
+    ctx.globalAlpha = isSecondary ? .8 : 1;
+    ctx.shadowColor = isSecondary ? COLORS.violet : COLORS.cyan;
+    ctx.shadowBlur = isSecondary ? 12 : 18;
     const gradient = ctx.createLinearGradient(paddle.x, 0, paddle.x + paddle.width, 0);
-    gradient.addColorStop(0, '#248ba4'); gradient.addColorStop(.15, COLORS.cyan); gradient.addColorStop(.85, COLORS.cyan); gradient.addColorStop(1, '#248ba4');
+    const paddleColor = isSecondary ? COLORS.violet : COLORS.cyan;
+    gradient.addColorStop(0, isSecondary ? '#41358f' : '#248ba4'); gradient.addColorStop(.15, paddleColor); gradient.addColorStop(.85, paddleColor); gradient.addColorStop(1, isSecondary ? '#41358f' : '#248ba4');
     ctx.fillStyle = gradient;
     this.#roundRect(ctx, paddle.x, paddle.y, paddle.width, paddle.height, 7);
     ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,.72)';
     this.#roundRect(ctx, paddle.x + 12, paddle.y + 2, paddle.width - 24, 2, 1);
     ctx.fill();
-    const charge = 1 - Math.max(0, Math.min(1, this.scene.autoFire.timeUntilShot / this.scene.autoFire.interval));
-    ctx.fillStyle = 'rgba(85,232,255,.18)';
-    ctx.fillRect(paddle.x, paddle.y + paddle.height + 7, paddle.width, 2);
-    ctx.fillStyle = COLORS.cyan;
-    ctx.fillRect(paddle.x, paddle.y + paddle.height + 7, paddle.width * charge, 2);
+    if (!isSecondary) {
+      const charge = 1 - Math.max(0, Math.min(1, this.scene.autoFire.timeUntilShot / this.scene.autoFire.interval));
+      ctx.fillStyle = 'rgba(85,232,255,.18)';
+      ctx.fillRect(paddle.x, paddle.y + paddle.height + 7, paddle.width, 2);
+      ctx.fillStyle = COLORS.cyan;
+      ctx.fillRect(paddle.x, paddle.y + paddle.height + 7, paddle.width * charge, 2);
+    }
     ctx.restore();
   }
 
@@ -153,6 +159,34 @@ export class BreakoutRenderer {
     ctx.beginPath();
     ctx.arc(wave.x, wave.y, radius * .72, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
+  }
+
+  #lightningArc(ctx, arc) {
+    if (arc.points.length < 2) return;
+    const alpha = Math.max(0, arc.life / arc.maxLife);
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let pass = 0; pass < 2; pass += 1) {
+      ctx.globalAlpha = alpha * (pass === 0 ? .3 : .95);
+      ctx.shadowColor = arc.color;
+      ctx.shadowBlur = pass === 0 ? 18 : 7;
+      ctx.strokeStyle = pass === 0 ? arc.color : '#f5fdff';
+      ctx.lineWidth = pass === 0 ? 5 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(arc.points[0].x, arc.points[0].y);
+      for (let index = 1; index < arc.points.length; index += 1) {
+        const previous = arc.points[index - 1];
+        const point = arc.points[index];
+        const middleX = (previous.x + point.x) / 2;
+        const middleY = (previous.y + point.y) / 2;
+        const bend = index % 2 === 0 ? -7 : 7;
+        ctx.lineTo(middleX + bend, middleY - bend);
+        ctx.lineTo(point.x, point.y);
+      }
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

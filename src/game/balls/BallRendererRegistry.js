@@ -236,5 +236,88 @@ export function createDefaultBallRenderers() {
     ctx.restore();
   });
 
+  registry.register('micro-navigation', (ctx, ball) => {
+    const pulse = .5 + Math.sin((ball.age ?? 0) * 13) * .5;
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (let index = ball.trail.length - 1; index > 0; index -= 1) {
+      const point = ball.trail[index];
+      const next = ball.trail[index - 1];
+      const progress = 1 - index / ball.trail.length;
+      ctx.globalAlpha = .04 + progress * .32;
+      ctx.strokeStyle = ball.visual.trailColor;
+      ctx.lineWidth = Math.max(1, ball.radius * progress * .75);
+      ctx.beginPath();
+      ctx.moveTo(point.x, point.y);
+      ctx.lineTo(next.x, next.y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.translate(ball.x, ball.y);
+    ctx.rotate(Math.atan2(ball.velocityY, ball.velocityX));
+    ctx.shadowColor = ball.visual.color;
+    ctx.shadowBlur = 18 + pulse * 8;
+    ctx.strokeStyle = `rgba(114, 255, 211, ${.35 + pulse * .35})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, ball.radius * (1.45 + pulse * .12), -.8, .8);
+    ctx.stroke();
+    const core = ctx.createRadialGradient(-2, -2, 0, 0, 0, ball.radius);
+    core.addColorStop(0, ball.visual.coreColor);
+    core.addColorStop(.45, ball.visual.innerColor);
+    core.addColorStop(1, ball.visual.color);
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(0, 0, ball.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ecfff9';
+    ctx.beginPath();
+    ctx.moveTo(ball.radius * 1.25, 0);
+    ctx.lineTo(ball.radius * .25, -ball.radius * .45);
+    ctx.lineTo(ball.radius * .25, ball.radius * .45);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
+
+  registry.register('lightning', (ctx, ball) => {
+    const pulse = .5 + Math.sin((ball.age ?? 0) * 21) * .5;
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (let index = ball.trail.length - 1; index > 0; index -= 1) {
+      const point = ball.trail[index];
+      const next = ball.trail[index - 1];
+      const progress = 1 - index / ball.trail.length;
+      ctx.globalAlpha = .04 + progress * .4;
+      ctx.strokeStyle = index % 2 === 0 ? ball.visual.color : ball.visual.trailColor;
+      ctx.lineWidth = Math.max(1, ball.radius * progress * .7);
+      ctx.beginPath();
+      ctx.moveTo(point.x, point.y);
+      ctx.lineTo(next.x, next.y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.translate(ball.x, ball.y);
+    ctx.shadowColor = ball.visual.color;
+    ctx.shadowBlur = 24 + pulse * 9;
+    const core = ctx.createRadialGradient(-2, -2, 0, 0, 0, ball.radius * 1.08);
+    core.addColorStop(0, ball.visual.coreColor);
+    core.addColorStop(.42, ball.visual.innerColor);
+    core.addColorStop(1, ball.visual.color);
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(0, 0, ball.radius * 1.05, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-ball.radius * .25, -ball.radius * .85);
+    ctx.lineTo(ball.radius * .15, -ball.radius * .12);
+    ctx.lineTo(-ball.radius * .08, -ball.radius * .12);
+    ctx.lineTo(ball.radius * .28, ball.radius * .88);
+    ctx.stroke();
+    ctx.restore();
+  });
+
   return registry;
 }

@@ -9,6 +9,7 @@ import { UpgradeSystem } from './systems/UpgradeSystem.js';
 import { BallCombatSystem } from './systems/BallCombatSystem.js';
 import { BallAbilitySystem } from './systems/BallAbilitySystem.js';
 import { OrbiterDamageSystem } from './systems/OrbiterDamageSystem.js';
+import { GuidanceSystem } from './systems/GuidanceSystem.js';
 import { BreakoutRenderer } from './BreakoutRenderer.js';
 import { createDefaultBallDefinitions } from './balls/BallDefinitionRegistry.js';
 import { BallFactory } from './balls/BallFactory.js';
@@ -31,11 +32,13 @@ export class BreakoutScene {
     this.ballCombat = new BallCombatSystem(this);
     this.ballAbilities = new BallAbilitySystem(this);
     this.ballPhysics = new BallPhysicsSystem(this);
+    this.guidance = new GuidanceSystem(this);
     this.orbiterDamage = new OrbiterDamageSystem(this);
     this.brickField = new BrickFieldSystem(this);
     this.systems = [
       new PaddleSystem(this),
       this.autoFire,
+      this.guidance,
       this.ballPhysics,
       this.orbiterDamage,
       this.ballAbilities,
