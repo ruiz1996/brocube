@@ -15,6 +15,7 @@ export class BallFactory {
     launchSource = 'manual',
     visualOverrides = {},
     periodicEffects = [],
+    orbitingDamageOverrides = {},
   }) {
     const definition = this.definitions.get(definitionId);
     return this.#create({
@@ -28,6 +29,7 @@ export class BallFactory {
       launchSource,
       visualOverrides,
       periodicEffects: [...definition.periodicEffects, ...periodicEffects],
+      orbitingDamageOverrides,
     });
   }
 
@@ -65,6 +67,7 @@ export class BallFactory {
     launchSource,
     visualOverrides = {},
     periodicEffects = [],
+    orbitingDamageOverrides = {},
   }) {
     return new Ball({
       definitionId,
@@ -90,21 +93,22 @@ export class BallFactory {
       })),
       collisionPolicy: definition.collisionPolicy,
       collisionConfig: { ...definition.collisionConfig },
-      orbiters: this.#createOrbiters(definition.orbitingDamage),
+      orbiters: this.#createOrbiters(definition.orbitingDamage, orbitingDamageOverrides),
       visual: { ...definition.visual, ...visualOverrides },
     });
   }
 
-  #createOrbiters(config) {
+  #createOrbiters(config, overrides = {}) {
     if (!config) return [];
-    return Array.from({ length: config.count }, (_, index) => ({
-      phase: config.phaseOffset + index * Math.PI * 2 / config.count,
-      orbitRadius: config.orbitRadius,
-      radius: config.radius,
-      angularSpeed: config.angularSpeed,
-      damage: config.damage,
-      damageType: config.damageType,
-      visual: { ...config.visual },
+    const resolved = { ...config, ...overrides };
+    return Array.from({ length: resolved.count }, (_, index) => ({
+      phase: resolved.phaseOffset + index * Math.PI * 2 / resolved.count,
+      orbitRadius: resolved.orbitRadius,
+      radius: resolved.radius,
+      angularSpeed: resolved.angularSpeed,
+      damage: resolved.damage,
+      damageType: resolved.damageType,
+      visual: { ...resolved.visual },
     }));
   }
 }

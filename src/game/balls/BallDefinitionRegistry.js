@@ -96,6 +96,7 @@ export function createDefaultBallDefinitions() {
       visual: {
         color: '#a56cff',
         coreColor: '#f4e9ff',
+        trailColor: '#8a4de0',
       },
     },
     visual: {

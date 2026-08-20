@@ -1,4 +1,4 @@
-import { getOrbiterPosition } from './Orbiter.js';
+import { getOrbiterPosition, getOrbiterTrail } from './Orbiter.js';
 
 export class BallRendererRegistry {
   constructor() { this.renderers = new Map(); }
@@ -172,23 +172,23 @@ export function createDefaultBallRenderers() {
       ctx.fill();
     }
 
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = `rgba(165, 108, 255, ${.16 + pulse * .08})`;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 5]);
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.orbiters[0]?.orbitRadius ?? 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
     for (const position of positions) {
-      ctx.strokeStyle = 'rgba(165, 108, 255, .16)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(ball.x, ball.y);
-      ctx.lineTo(position.x, position.y);
-      ctx.stroke();
+      const orbiterTrail = getOrbiterTrail(ball, position.orbiter);
+      ctx.lineCap = 'round';
+      for (let index = orbiterTrail.length - 1; index > 0; index -= 1) {
+        const point = orbiterTrail[index];
+        const next = orbiterTrail[index - 1];
+        const progress = 1 - index / orbiterTrail.length;
+        ctx.globalAlpha = .05 + progress * .42;
+        ctx.strokeStyle = position.orbiter.visual.trailColor ?? position.orbiter.visual.color;
+        ctx.lineWidth = Math.max(1, position.radius * (.2 + progress * .55));
+        ctx.beginPath();
+        ctx.moveTo(point.x, point.y);
+        ctx.lineTo(next.x, next.y);
+        ctx.stroke();
+      }
 
+      ctx.globalAlpha = 1;
       ctx.shadowColor = position.orbiter.visual.color;
       ctx.shadowBlur = 16 + pulse * 5;
       const satellite = ctx.createRadialGradient(

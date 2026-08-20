@@ -42,6 +42,8 @@ export const GAME = Object.freeze({
     voidOrbitRadius: 26,
     voidOrbiterRadius: 5,
     voidOrbiterAngularSpeed: 4.2,
+    voidOrbiterSpeedMultiplierPerLevel: 1.25,
+    voidOrbiterSpeedMaxLevel: 3,
     voidOrbiterDamage: 1,
     ballSpeedMultiplierPerLevel: 1.12,
     paddleLengthMultiplierPerLevel: 1.2,

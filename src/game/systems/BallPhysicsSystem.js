@@ -89,7 +89,7 @@ export class BallPhysicsSystem {
     for (const ball of world.all('ball')) {
       if (ball.attached) continue;
       ball.age += dt;
-      ball.trail.unshift({ x: ball.x, y: ball.y });
+      ball.trail.unshift({ x: ball.x, y: ball.y, age: ball.age });
       const trailLength = ball.visual.trailLength ?? 8;
       if (ball.trail.length > trailLength) ball.trail.pop();
       ball.x += ball.velocityX * dt;

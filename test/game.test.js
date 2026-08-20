@@ -21,6 +21,7 @@ import {
   createDefaultBallDefinitions,
 } from '../src/game/balls/BallDefinitionRegistry.js';
 import { BallFactory } from '../src/game/balls/BallFactory.js';
+import { getOrbiterTrail } from '../src/game/balls/Orbiter.js';
 import { createDefaultBallEmitters } from '../src/game/emitters/BallEmitterRegistry.js';
 
 test('EventBus 支持 once 和主动解绑', () => {
@@ -458,6 +459,10 @@ test('虚空双星由核心负责反弹死亡，两颗子球独立造成接触�
   assert.equal(voidLaunch.ball.contactDamage, false);
   assert.equal(voidLaunch.ball.orbiters.length, 2);
   assert.equal(voidLaunch.ball.orbiters[0].damage, GAME.upgrade.voidOrbiterDamage);
+  assert.ok(voidLaunch.ball.trail.every((point) => Number.isFinite(point.age)));
+  const orbiterTrail = getOrbiterTrail(voidLaunch.ball, voidLaunch.ball.orbiters[0]);
+  assert.equal(orbiterTrail.length, voidLaunch.ball.trail.length);
+  assert.ok(orbiterTrail.every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)));
 
   const voidBall = voidLaunch.ball;
   const target = scene.world.first('brick');
@@ -497,6 +502,58 @@ test('虚空双星由核心负责反弹死亡，两颗子球独立造成接触�
   scene.ballPhysics.update(0);
   assert.equal(voidBall.active, false);
   assert.equal(scene.upgrades.isAvailable('voidOrbit'), false);
+  scene.exit();
+});
+
+test('虚空超旋需要虚空双星前置，最多三级并作用于现有及未来子球', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  const prepareChoice = () => {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+  };
+
+  assert.equal(scene.upgrades.isAvailable('voidOrbitSpeed'), false);
+  prepareChoice();
+  assert.equal(scene.chooseUpgrade('voidOrbitSpeed'), false);
+  assert.equal(scene.chooseUpgrade('voidOrbit'), true);
+  assert.equal(scene.upgrades.isAvailable('voidOrbitSpeed'), true);
+
+  scene.autoFire.random = () => 0;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const existingVoidBall = scene.world.all('ball').find((ball) => ball.launchSource === 'void-orbit');
+  assert.ok(existingVoidBall);
+  assert.ok(existingVoidBall.orbiters.every(
+    (orbiter) => orbiter.angularSpeed === GAME.upgrade.voidOrbiterAngularSpeed,
+  ));
+
+  for (let level = 1; level <= GAME.upgrade.voidOrbiterSpeedMaxLevel; level += 1) {
+    prepareChoice();
+    assert.equal(scene.chooseUpgrade('voidOrbitSpeed'), true);
+    const expectedSpeed = GAME.upgrade.voidOrbiterAngularSpeed
+      * GAME.upgrade.voidOrbiterSpeedMultiplierPerLevel ** level;
+    assert.ok(existingVoidBall.orbiters.every(
+      (orbiter) => Math.abs(orbiter.angularSpeed - expectedSpeed) < .0001,
+    ));
+  }
+  assert.equal(scene.upgrades.isAvailable('voidOrbitSpeed'), false);
+
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const voidBalls = scene.world.all('ball').filter((ball) => ball.launchSource === 'void-orbit');
+  assert.equal(voidBalls.length, 2);
+  assert.ok(voidBalls[1].orbiters.every(
+    (orbiter) => Math.abs(orbiter.angularSpeed - scene.upgrades.voidOrbiterAngularSpeed) < .0001,
+  ));
   scene.exit();
 });
 
@@ -838,6 +895,9 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
     chooseDirectly('blastCooldown');
   }
   chooseDirectly('voidOrbit');
+  for (let level = 0; level < GAME.upgrade.voidOrbiterSpeedMaxLevel; level += 1) {
+    chooseDirectly('voidOrbitSpeed');
+  }
 
   const cappedUpgradeIds = [
     'paddleLength',
@@ -847,6 +907,7 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
     'blastLaunch',
     'blastCooldown',
     'voidOrbit',
+    'voidOrbitSpeed',
   ];
   for (const id of cappedUpgradeIds) assert.equal(scene.upgrades.isAvailable(id), false);
   for (let sample = 0; sample < 20; sample += 1) {

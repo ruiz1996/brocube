@@ -1,4 +1,5 @@
 import { GAME } from '../config.js';
+import { VOID_ORBIT_BALL_ID } from '../balls/BallDefinitionRegistry.js';
 
 const UPGRADE_IDS = [
   'rapidFire',
@@ -8,6 +9,7 @@ const UPGRADE_IDS = [
   'blastLaunch',
   'blastCooldown',
   'voidOrbit',
+  'voidOrbitSpeed',
   'ballSpeed',
   'paddleLength',
   'bottomBounce',
@@ -16,6 +18,7 @@ const UPGRADE_IDS = [
 const UPGRADE_PREREQUISITES = {
   topRecovery: 'topLaunch',
   blastCooldown: 'blastLaunch',
+  voidOrbitSpeed: 'voidOrbit',
 };
 
 const UPGRADE_MAX_LEVEL_KEYS = {
@@ -24,6 +27,7 @@ const UPGRADE_MAX_LEVEL_KEYS = {
   blastLaunch: 'blastLaunchMaxLevel',
   blastCooldown: 'blastCooldownMaxLevel',
   voidOrbit: 'voidOrbitMaxLevel',
+  voidOrbitSpeed: 'voidOrbiterSpeedMaxLevel',
   paddleLength: 'paddleLengthMaxLevel',
   bottomBounce: 'bottomBounceMaxLevel',
 };
@@ -53,6 +57,7 @@ export class UpgradeSystem {
       blastLaunch: 0,
       blastCooldown: 0,
       voidOrbit: 0,
+      voidOrbitSpeed: 0,
       ballSpeed: 0,
       paddleLength: 0,
       bottomBounce: 0,
@@ -88,6 +93,11 @@ export class UpgradeSystem {
 
   get voidOrbitChance() {
     return this.levels.voidOrbit > 0 ? GAME.upgrade.voidOrbitChance : 0;
+  }
+
+  get voidOrbiterAngularSpeed() {
+    return GAME.upgrade.voidOrbiterAngularSpeed
+      * GAME.upgrade.voidOrbiterSpeedMultiplierPerLevel ** this.levels.voidOrbitSpeed;
   }
 
   get blastInterval() {
@@ -163,6 +173,13 @@ export class UpgradeSystem {
           effect.timeRemaining = Math.min(effect.timeRemaining, effect.interval);
         }
       }
+    } else if (id === 'voidOrbitSpeed') {
+      for (const ball of this.scene.world.all('ball')) {
+        if (ball.definitionId !== VOID_ORBIT_BALL_ID) continue;
+        for (const orbiter of ball.orbiters) {
+          orbiter.angularSpeed = this.voidOrbiterAngularSpeed;
+        }
+      }
     }
 
     this.scene.events.emit('upgrade:selected', {
@@ -224,6 +241,13 @@ export class UpgradeSystem {
         level: this.levels.voidOrbit,
         maxLevel: GAME.upgrade.voidOrbitMaxLevel,
         description: `每次自动发射有 ${Math.round(GAME.upgrade.voidOrbitChance * 100)}% 概率追加虚空核心；核心负责反弹，两颗环绕子球各造成 ${GAME.upgrade.voidOrbiterDamage} 点伤害`,
+      },
+      {
+        id: 'voidOrbitSpeed',
+        name: '虚空超旋',
+        level: this.levels.voidOrbitSpeed,
+        maxLevel: GAME.upgrade.voidOrbiterSpeedMaxLevel,
+        description: `双星公转速度 ${this.voidOrbiterAngularSpeed.toFixed(2)} → ${(this.voidOrbiterAngularSpeed * GAME.upgrade.voidOrbiterSpeedMultiplierPerLevel).toFixed(2)}（每级提升 ${Math.round((GAME.upgrade.voidOrbiterSpeedMultiplierPerLevel - 1) * 100)}%，最多 ${GAME.upgrade.voidOrbiterSpeedMaxLevel} 级）`,
       },
       {
         id: 'topRecovery',

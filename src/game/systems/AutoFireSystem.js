@@ -70,6 +70,9 @@ export class AutoFireSystem {
         definitionId: VOID_ORBIT_BALL_ID,
         emitterId: 'paddle',
         source: 'void-orbit',
+        orbitingDamageOverrides: {
+          angularSpeed: this.scene.upgrades.voidOrbiterAngularSpeed,
+        },
       });
     }
     this.timeUntilShot += this.interval;
@@ -83,6 +86,7 @@ export class AutoFireSystem {
     source = 'automatic',
     visualOverrides = {},
     periodicEffects = [],
+    orbitingDamageOverrides = {},
   }) {
     const definition = this.scene.ballDefinitions.get(definitionId);
     const shot = this.scene.ballEmitters.createShot(emitterId, {
@@ -100,6 +104,7 @@ export class AutoFireSystem {
       launchSource: source,
       visualOverrides,
       periodicEffects,
+      orbitingDamageOverrides,
     });
     this.scene.world.add(ball);
     this.scene.events.emit('ball:launched', {
