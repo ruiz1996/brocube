@@ -3,10 +3,17 @@ import test from 'node:test';
 import { EventBus } from '../src/core/EventBus.js';
 import { Entity, World } from '../src/core/Entity.js';
 import { GameEngine } from '../src/core/GameEngine.js';
+import { InputManager, mapPointerToElement } from '../src/core/InputManager.js';
 import { BreakoutScene } from '../src/game/BreakoutScene.js';
 import { GAME } from '../src/game/config.js';
-import { calculateExpectedBrickHitPoints, selectBrickHitPoints } from '../src/game/systems/BrickFieldSystem.js';
+import {
+  calculateBrickSizeHealthMultiplier,
+  calculateExpectedBrickHitPoints,
+  selectBrickDimensions,
+  selectBrickHitPoints,
+} from '../src/game/systems/BrickFieldSystem.js';
 import { calculateUpgradeScoreCost } from '../src/game/systems/UpgradeSystem.js';
+import { calculateUpgradeProgress } from '../src/ui/GameUI.js';
 import { ComboPlugin } from '../src/game/plugins/ComboPlugin.js';
 import { BASIC_BALL_ID, createDefaultBallDefinitions } from '../src/game/balls/BallDefinitionRegistry.js';
 import { BallFactory } from '../src/game/balls/BallFactory.js';
@@ -51,6 +58,65 @@ test('GameEngine 可以完成浏览器环境初始化', () => {
   assert.equal(engine.width, 960);
   assert.equal(engine.height, 600);
   assert.equal(engine.running, false);
+});
+
+test('画布下方触控坐标按画布宽度映射并限制在游戏范围内', () => {
+  const canvas = {
+    width: 600,
+    height: 900,
+    getBoundingClientRect() {
+      return { left: 10, top: 100, width: 400, height: 600 };
+    },
+  };
+  assert.deepEqual(
+    mapPointerToElement({ clientX: 210, clientY: 760 }, canvas),
+    { x: 300, y: 900 },
+  );
+  assert.deepEqual(
+    mapPointerToElement({ clientX: -50, clientY: 50 }, canvas),
+    { x: 0, y: 0 },
+  );
+});
+
+test('提示区域支持触摸拖动、指针捕获并在松手后停止控制', () => {
+  globalThis.window = { addEventListener() {} };
+  const createTarget = (bounds, dimensions = {}) => ({
+    ...dimensions,
+    listeners: new Map(),
+    addEventListener(type, listener) { this.listeners.set(type, listener); },
+    getBoundingClientRect() { return bounds; },
+    setPointerCapture(pointerId) { this.capturedPointer = pointerId; },
+  });
+  const canvas = createTarget(
+    { left: 20, top: 100, width: 400, height: 600 },
+    { width: 600, height: 900 },
+  );
+  const tip = createTarget({ left: 20, top: 760, width: 400, height: 44 });
+  const input = new InputManager({ coordinateElement: canvas, pointerTargets: [canvas, tip] });
+  let prevented = 0;
+  const touchEvent = (clientX, type = 'touch') => ({
+    clientX,
+    clientY: 782,
+    pointerId: 7,
+    pointerType: type,
+    preventDefault() { prevented += 1; },
+  });
+
+  tip.listeners.get('pointerdown')(touchEvent(120));
+  assert.equal(input.pointer.x, 150);
+  assert.equal(input.pointer.y, 900);
+  assert.equal(input.pointer.active, true);
+  assert.equal(input.pointer.justPressed, true);
+  assert.equal(tip.capturedPointer, 7);
+
+  tip.listeners.get('pointermove')(touchEvent(360));
+  assert.equal(input.pointer.x, 510);
+  assert.equal(prevented, 2);
+
+  tip.listeners.get('pointermove')(touchEvent(220, 'mouse'));
+  assert.equal(input.pointer.x, 510);
+  tip.listeners.get('pointerup')();
+  assert.equal(input.pointer.active, false);
 });
 
 test('生存玩法可自动发球、击毁多边形且落球不结束游戏', () => {
@@ -154,7 +220,7 @@ test('发射器可独立切换挡板发射和顶部发射', () => {
     radius: GAME.ball.radius,
   });
   assert.equal(paddleShot.x, 160);
-  assert.ok(Math.sin(paddleShot.angle) < 0);
+  assert.equal(paddleShot.angle, -Math.PI / 2);
 
   const topShot = emitters.createShot('top', {
     scene,
@@ -163,6 +229,21 @@ test('发射器可独立切换挡板发射和顶部发射', () => {
   });
   assert.equal(topShot.y, GAME.playTop + GAME.ball.radius + 3);
   assert.ok(Math.sin(topShot.angle) > 0);
+});
+
+test('普通方块尺寸采样偏向横向扁长并保留随机范围', () => {
+  assert.ok(GAME.brick.minWidth >= 34 * 1.2);
+  assert.ok(GAME.brick.maxWidth >= 61 * 1.2);
+  assert.ok(GAME.brick.minHeight >= 26 * 1.2);
+  assert.ok(GAME.brick.maxHeight >= 46 * 1.2);
+  const middle = selectBrickDimensions(() => .5);
+  assert.ok(middle.width / middle.height > 1.5);
+
+  const sequence = [0, 0, 1, 1];
+  const minimum = selectBrickDimensions(() => sequence.shift());
+  const maximum = selectBrickDimensions(() => sequence.shift());
+  assert.deepEqual(minimum, { width: GAME.brick.minWidth, height: GAME.brick.minHeight });
+  assert.deepEqual(maximum, { width: GAME.brick.maxWidth, height: GAME.brick.maxHeight });
 });
 
 test('碰撞策略可穿透后回退为反弹，分裂只创建基础衍生球', () => {
@@ -226,7 +307,7 @@ test('碰撞策略可穿透后回退为反弹，分裂只创建基础衍生球',
   scene.exit();
 });
 
-test('挡板每五秒自动发射一颗新球', () => {
+test('挡板每三秒自动发射一颗新球', () => {
   const events = new EventBus();
   const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
   const scene = new BreakoutScene();
@@ -237,8 +318,9 @@ test('挡板每五秒自动发射一颗新球', () => {
     plugins: { plugins: new Map() },
   });
   scene.startNewGame();
-  for (let index = 0; index < 650; index += 1) scene.update(1 / 120);
-  assert.equal(launches, 2);
+  for (let index = 0; index < 800; index += 1) scene.update(1 / 120);
+  assert.equal(GAME.autoFireInterval, 3);
+  assert.equal(launches, 3);
   scene.exit();
 });
 
@@ -269,6 +351,7 @@ test('天顶增援有25%概率追加一颗双倍速度的顶部球', () => {
   const topLaunch = launches.find(({ emitterId }) => emitterId === 'top');
   assert.ok(regularLaunch);
   assert.equal(topLaunch.source, 'top-launch');
+  assert.equal(topLaunch.ball.launchSource, 'top-launch');
   assert.ok(topLaunch.ball.velocityY > 0);
   assert.equal(topLaunch.ball.visual.renderer, 'top-launch');
   assert.equal(topLaunch.ball.visual.color, '#ffad5a');
@@ -308,6 +391,7 @@ test('爆裂核心有25%概率发射带周期范围伤害和独特外观的球',
   const blastLaunch = launches.find(({ source }) => source === 'blast-launch');
   assert.ok(blastLaunch);
   assert.equal(blastLaunch.emitterId, 'paddle');
+  assert.equal(blastLaunch.ball.launchSource, 'blast-launch');
   assert.equal(blastLaunch.ball.visual.renderer, 'blast-core');
   assert.equal(blastLaunch.ball.visual.trailLength, 12);
   assert.equal(blastLaunch.ball.periodicEffects.length, 1);
@@ -342,12 +426,130 @@ test('爆裂核心有25%概率发射带周期范围伤害和独特外观的球',
   scene.exit();
 });
 
+test('特殊球进阶卡需要前置，爆裂增压会缩短现有与未来爆裂球间隔', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  const prepareChoice = () => {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+  };
+
+  assert.equal(scene.upgrades.isAvailable('blastCooldown'), false);
+  prepareChoice();
+  assert.equal(scene.chooseUpgrade('blastCooldown'), false);
+  assert.equal(scene.chooseUpgrade('blastLaunch'), true);
+  assert.equal(scene.upgrades.isAvailable('blastCooldown'), true);
+
+  scene.autoFire.random = () => 0;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const firstBlast = scene.world.all('ball').find((ball) => ball.launchSource === 'blast-launch');
+  const firstEffect = firstBlast.periodicEffects.find((effect) => effect.id === 'area-blast');
+  assert.equal(firstEffect.interval, GAME.upgrade.blastInterval);
+
+  prepareChoice();
+  assert.equal(scene.chooseUpgrade('blastCooldown'), true);
+  assert.equal(scene.upgrades.levels.blastCooldown, 1);
+  assert.ok(scene.upgrades.blastInterval < GAME.upgrade.blastInterval);
+  assert.equal(firstEffect.interval, scene.upgrades.blastInterval);
+  assert.ok(firstEffect.timeRemaining <= firstEffect.interval);
+
+  for (let level = 1; level < GAME.upgrade.blastCooldownMaxLevel; level += 1) {
+    prepareChoice();
+    assert.equal(scene.chooseUpgrade('blastCooldown'), true);
+  }
+  assert.equal(scene.upgrades.isAvailable('blastCooldown'), false);
+
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const blastEffects = scene.world.all('ball')
+    .filter((ball) => ball.launchSource === 'blast-launch')
+    .map((ball) => ball.periodicEffects.find((effect) => effect.id === 'area-blast'));
+  assert.equal(blastEffects.length, 2);
+  assert.ok(blastEffects.every((effect) => effect.interval === scene.upgrades.blastInterval));
+  scene.exit();
+});
+
+test('天顶续航在普通底线判定失败后为天顶球追加独立保留判定', () => {
+  const events = new EventBus();
+  const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
+  const scene = new BreakoutScene();
+  const saves = [];
+  events.on('ball:saved', (payload) => saves.push(payload));
+  scene.enter({
+    engine: { setPaused() {} }, input, events, ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  const prepareChoice = () => {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+  };
+
+  assert.equal(scene.upgrades.isAvailable('topRecovery'), false);
+  prepareChoice();
+  assert.equal(scene.chooseUpgrade('topRecovery'), false);
+  assert.equal(scene.chooseUpgrade('topLaunch'), true);
+  assert.equal(scene.upgrades.isAvailable('topRecovery'), true);
+  prepareChoice();
+  assert.equal(scene.chooseUpgrade('topRecovery'), true);
+  assert.equal(scene.upgrades.topRecoveryChance, GAME.upgrade.topRecoveryChancePerLevel);
+
+  scene.autoFire.random = () => 0;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const topBall = scene.world.all('ball').find((ball) => ball.launchSource === 'top-launch');
+  topBall.y = GAME.playBottom + topBall.radius + 1;
+  topBall.velocityY = 100;
+  scene.ballPhysics.random = () => .2;
+  scene.ballPhysics.update(0);
+  assert.equal(topBall.active, true);
+  assert.ok(topBall.velocityY < 0);
+  assert.equal(saves.at(-1).reason, 'top-recovery');
+
+  const regularBall = scene.ballFactory.createPrimary({
+    x: GAME.width / 2,
+    y: GAME.playBottom + GAME.ball.radius + 1,
+    angle: Math.PI / 2,
+    launchSource: 'automatic',
+  });
+  scene.world.add(regularBall);
+  scene.world.flush();
+  scene.ballPhysics.update(0);
+  assert.equal(regularBall.active, false);
+  scene.exit();
+});
+
 test('方块血量按可调公式随时间和分数无上限增长', () => {
   assert.equal(calculateExpectedBrickHitPoints({ elapsed: 0, score: 0 }), 1.4);
   assert.ok(calculateExpectedBrickHitPoints({ elapsed: 60, score: 0 }) > 2);
   assert.ok(calculateExpectedBrickHitPoints({ elapsed: 0, score: 5000 }) > 2);
   assert.ok(calculateExpectedBrickHitPoints({ elapsed: 600, score: 100000 }) > 15);
   assert.equal(selectBrickHitPoints({ elapsed: 0, score: 0 }, () => .5), 1);
+
+  const smallest = { width: GAME.brick.minWidth, height: GAME.brick.minHeight };
+  const largest = { width: GAME.brick.maxWidth, height: GAME.brick.maxHeight };
+  assert.equal(
+    calculateBrickSizeHealthMultiplier(smallest),
+    GAME.brick.healthFormula.sizeMinMultiplier,
+  );
+  assert.equal(
+    calculateBrickSizeHealthMultiplier(largest),
+    GAME.brick.healthFormula.sizeMaxMultiplier,
+  );
+  const smallHighRoll = selectBrickHitPoints({ elapsed: 0, score: 0, ...smallest }, () => 1);
+  const largeLowRoll = selectBrickHitPoints({ elapsed: 0, score: 0, ...largest }, () => 0);
+  assert.ok(largeLowRoll > smallHighRoll);
 
   const customFormula = {
     baseHp: 2,
@@ -421,6 +623,19 @@ test('强化所需分数随已获得强化次数持续增加', () => {
   assert.equal(firstCost, GAME.upgrade.scoreInterval);
   assert.ok(secondCost > firstCost);
   assert.ok(tenthCost > secondCost * 2);
+
+  assert.deepEqual(
+    calculateUpgradeProgress({ score: firstCost / 2, progressStart: 0, nextScore: firstCost }),
+    { earned: firstCost / 2, required: firstCost, ratio: 0.5 },
+  );
+  assert.deepEqual(
+    calculateUpgradeProgress({
+      score: firstCost + secondCost / 4,
+      progressStart: firstCost,
+      nextScore: firstCost + secondCost,
+    }),
+    { earned: secondCost / 4, required: secondCost, ratio: 0.25 },
+  );
 });
 
 test('范围伤害跨过强化阈值后，同次多杀仍会完整计分', () => {
@@ -467,11 +682,20 @@ test('分数强化可以重复选择并作用于发球和场上球', () => {
   scene.upgrades.check(scene.upgrades.nextScore);
   scene.chooseUpgrade('multiShot');
   assert.equal(scene.upgrades.levels.multiShot, 1);
-  const ballCount = scene.world.all('ball').length;
+  const existingBalls = scene.world.all('ball');
+  const ballCount = existingBalls.length;
+  const existingBallIds = new Set(existingBalls.map((candidate) => candidate.id));
   scene.autoFire.random = () => 0;
   scene.autoFire.timeUntilShot = 0;
   scene.update(1 / 120);
   assert.equal(scene.world.all('ball').length, ballCount + 2);
+  const newBalls = scene.world.all('ball').filter((candidate) => !existingBallIds.has(candidate.id));
+  const automaticLaunch = newBalls.find((candidate) => Math.abs(candidate.velocityX) < .0001);
+  const extraLaunch = newBalls.find((candidate) => Math.abs(candidate.velocityX) >= .0001);
+  assert.ok(automaticLaunch);
+  assert.ok(extraLaunch);
+  assert.ok(automaticLaunch.velocityY < 0);
+  assert.ok(extraLaunch.velocityY < 0);
 
   const ball = scene.world.first('ball');
   const speedBefore = Math.hypot(ball.velocityX, ball.velocityY);
@@ -507,15 +731,46 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
     assert.equal(scene.chooseUpgrade(id), true);
   };
 
-  for (let level = 0; level < 3; level += 1) chooseDirectly('paddleLength');
+  for (let level = 0; level < GAME.upgrade.paddleLengthMaxLevel; level += 1) {
+    chooseDirectly('paddleLength');
+  }
   const paddle = scene.world.first('paddle');
-  const expectedWidth = GAME.paddle.width * GAME.upgrade.paddleLengthMultiplierPerLevel ** 3;
+  const expectedWidth = GAME.paddle.width
+    * GAME.upgrade.paddleLengthMultiplierPerLevel ** GAME.upgrade.paddleLengthMaxLevel;
   assert.ok(Math.abs(paddle.width - expectedWidth) < .0001);
-  assert.equal(scene.upgrades.options().some((option) => option.id === 'paddleLength'), false);
+  assert.equal(scene.upgrades.levels.paddleLength, 5);
+  assert.equal(scene.upgrades.isAvailable('paddleLength'), false);
 
-  for (let level = 0; level < 3; level += 1) chooseDirectly('bottomBounce');
+  for (let level = 0; level < GAME.upgrade.bottomBounceMaxLevel; level += 1) {
+    chooseDirectly('bottomBounce');
+  }
   assert.ok(Math.abs(scene.upgrades.bottomBounceChance - .6) < .0001);
-  assert.equal(scene.upgrades.options().some((option) => option.id === 'bottomBounce'), false);
+  assert.equal(scene.upgrades.isAvailable('bottomBounce'), false);
+
+  chooseDirectly('topLaunch');
+  for (let level = 0; level < GAME.upgrade.topRecoveryMaxLevel; level += 1) {
+    chooseDirectly('topRecovery');
+  }
+  chooseDirectly('blastLaunch');
+  for (let level = 0; level < GAME.upgrade.blastCooldownMaxLevel; level += 1) {
+    chooseDirectly('blastCooldown');
+  }
+
+  const cappedUpgradeIds = [
+    'paddleLength',
+    'bottomBounce',
+    'topLaunch',
+    'topRecovery',
+    'blastLaunch',
+    'blastCooldown',
+  ];
+  for (const id of cappedUpgradeIds) assert.equal(scene.upgrades.isAvailable(id), false);
+  for (let sample = 0; sample < 20; sample += 1) {
+    assert.equal(
+      scene.upgrades.options().some((option) => cappedUpgradeIds.includes(option.id)),
+      false,
+    );
+  }
 
   for (let index = 0; index < 40; index += 1) scene.update(1 / 120);
   const ball = scene.world.first('ball');

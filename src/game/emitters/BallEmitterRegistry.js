@@ -27,7 +27,7 @@ export function createDefaultBallEmitters() {
     const minimum = GAME.upgrade.randomLaunchMinAngle;
     const angle = randomized
       ? -(minimum + random() * (Math.PI - minimum * 2))
-      : -Math.PI / 2 + (random() - .5) * .26;
+      : -Math.PI / 2;
     return {
       x: paddle.x + paddle.width / 2,
       y: paddle.y - radius - 4,

@@ -1,3 +1,11 @@
+export function calculateUpgradeProgress({ score, progressStart, nextScore }) {
+  const start = Math.max(0, progressStart ?? 0);
+  const target = Math.max(start + 1, nextScore ?? start + 1);
+  const required = target - start;
+  const earned = Math.max(0, Math.min(required, score - start));
+  return { earned, required, ratio: earned / required };
+}
+
 export class GameUI {
   constructor(engine, scene, audio) {
     this.engine = engine;
@@ -6,6 +14,9 @@ export class GameUI {
     this.score = document.querySelector('#score-value');
     this.balls = document.querySelector('#balls-value');
     this.shot = document.querySelector('#shot-value');
+    this.upgradeProgressTrack = document.querySelector('#upgrade-progress-track');
+    this.upgradeProgressFill = document.querySelector('#upgrade-progress-fill');
+    this.upgradeProgressValue = document.querySelector('#upgrade-progress-value');
     this.overlay = document.querySelector('#game-overlay');
     this.kicker = document.querySelector('#overlay-kicker');
     this.title = document.querySelector('#overlay-title');
@@ -60,10 +71,22 @@ export class GameUI {
     events.on('combo:ended', () => this.#hideCombo());
   }
 
-  updateStats({ score, balls, nextShot }) {
+  updateStats({ score, balls, nextShot, upgradeProgressStart = 0, nextUpgradeScore }) {
     this.score.textContent = String(Math.round(score)).padStart(6, '0');
     this.balls.textContent = String(balls).padStart(2, '0');
     this.shot.textContent = `${Math.max(0, nextShot).toFixed(1)}s`;
+    const progress = calculateUpgradeProgress({
+      score,
+      progressStart: upgradeProgressStart,
+      nextScore: nextUpgradeScore,
+    });
+    this.upgradeProgressFill.style.transform = `scaleX(${progress.ratio})`;
+    this.upgradeProgressValue.textContent = `${Math.round(progress.earned)} / ${Math.round(progress.required)}`;
+    this.upgradeProgressTrack.setAttribute('aria-valuenow', String(Math.round(progress.ratio * 100)));
+    this.upgradeProgressTrack.setAttribute(
+      'aria-valuetext',
+      `距离下次强化：${Math.round(progress.earned)} / ${Math.round(progress.required)} 分`,
+    );
   }
 
   #showOverlay(kicker, title, copy, buttonLabel) {

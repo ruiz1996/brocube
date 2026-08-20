@@ -119,6 +119,47 @@ button { font: inherit; }
 .status-label { color: #687694; font: 700 10px 'Space Mono', monospace; letter-spacing: .18em; }
 .status-item strong { font: 700 21px 'Space Mono', monospace; letter-spacing: .06em; }
 
+.upgrade-progress {
+  height: 28px;
+  display: grid;
+  grid-template-columns: auto minmax(70px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 0 18px;
+  color: #687694;
+  background: rgba(7, 11, 24, .66);
+  border-bottom: 1px solid var(--line);
+}
+
+.upgrade-progress-label,
+.upgrade-progress-value {
+  font: 700 8px 'Space Mono', monospace;
+  letter-spacing: .12em;
+  white-space: nowrap;
+}
+
+.upgrade-progress-value { color: #8d9cbd; letter-spacing: .04em; }
+
+.upgrade-progress-track {
+  height: 5px;
+  overflow: hidden;
+  background: rgba(111, 132, 181, .16);
+  border: 1px solid rgba(129, 151, 203, .16);
+  border-radius: 999px;
+}
+
+.upgrade-progress-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--violet), var(--cyan));
+  border-radius: inherit;
+  box-shadow: 0 0 12px rgba(85, 232, 255, .42);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform .16s ease-out;
+}
+
 .lives { display: flex; height: 21px; align-items: center; gap: 8px; }
 .life-icon { width: 16px; height: 8px; border-radius: 3px 3px 8px 8px; background: var(--cyan); box-shadow: 0 0 10px rgba(85,232,255,.55); transform: perspective(10px) rotateX(-8deg); }
 
@@ -306,6 +347,9 @@ kbd {
   .status-center { min-width: 70px; }
   .status-label { font-size: 8px; letter-spacing: .12em; }
   .status-item strong { font-size: 16px; }
+  .upgrade-progress { height: 25px; gap: 7px; padding: 0 11px; }
+  .upgrade-progress-label { font-size: 7px; letter-spacing: .08em; }
+  .upgrade-progress-value { font-size: 7px; }
   .stage { min-height: 0; aspect-ratio: 2 / 3; }
   .game-overlay { padding: 20px; }
   .game-overlay h1 { font-size: clamp(30px, 10vw, 42px); }
@@ -314,6 +358,15 @@ kbd {
   .desktop-control { display: none; }
   .touch-control { display: inline; color: #8d99b5; }
   .control-bar span:last-child { display: none; }
+  .control-bar, .tip { touch-action: none; user-select: none; -webkit-user-select: none; }
+  .tip {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0;
+    padding: 8px 12px;
+  }
   .upgrade-overlay { padding: 16px; justify-content: flex-start; overflow-y: auto; }
   .upgrade-overlay h2 { margin-top: 3px; }
   .upgrade-copy { margin-bottom: 12px; }

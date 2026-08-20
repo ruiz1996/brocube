@@ -148,11 +148,18 @@ export class BallPhysicsSystem {
       }
       if (!ball.active) continue;
       if (ball.y - ball.radius > GAME.playBottom) {
-        if (this.random() < this.scene.upgrades.bottomBounceChance) {
+        const bottomBounceSaved = this.random() < this.scene.upgrades.bottomBounceChance;
+        const topRecoverySaved = !bottomBounceSaved
+          && ball.launchSource === 'top-launch'
+          && this.random() < this.scene.upgrades.topRecoveryChance;
+        if (bottomBounceSaved || topRecoverySaved) {
           ball.y = GAME.playBottom - ball.radius;
           ball.velocityY = -Math.abs(ball.velocityY);
           events.emit('ball:bounce', { ball, surface: 'bottom' });
-          events.emit('ball:saved', { ball });
+          events.emit('ball:saved', {
+            ball,
+            reason: topRecoverySaved ? 'top-recovery' : 'bottom-bounce',
+          });
         } else {
           ball.destroy();
           events.emit('ball:lost', { ball });

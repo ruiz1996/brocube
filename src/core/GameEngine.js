@@ -3,7 +3,7 @@ import { InputManager } from './InputManager.js';
 import { PluginManager } from './PluginManager.js';
 
 export class GameEngine {
-  constructor({ canvas, width = 960, height = 600, fixedStep = 1 / 120 }) {
+  constructor({ canvas, width = 960, height = 600, fixedStep = 1 / 120, pointerTargets = [canvas] }) {
     this.canvas = canvas;
     this.canvas.width = width;
     this.canvas.height = height;
@@ -12,7 +12,7 @@ export class GameEngine {
     this.height = height;
     this.fixedStep = fixedStep;
     this.events = new EventBus();
-    this.input = new InputManager(canvas);
+    this.input = new InputManager({ coordinateElement: canvas, pointerTargets });
     this.scene = null;
     this.running = false;
     this.paused = false;

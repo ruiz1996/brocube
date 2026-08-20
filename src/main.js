@@ -6,7 +6,12 @@ import { ComboPlugin } from './game/plugins/ComboPlugin.js';
 import { GameUI } from './ui/GameUI.js';
 
 const canvas = document.querySelector('#game-canvas');
-const engine = new GameEngine({ canvas, width: GAME.width, height: GAME.height });
+const pointerTargets = [
+  canvas,
+  document.querySelector('#control-bar'),
+  document.querySelector('#touch-tip'),
+];
+const engine = new GameEngine({ canvas, width: GAME.width, height: GAME.height, pointerTargets });
 const scene = new BreakoutScene();
 
 engine.plugins.use(ComboPlugin);

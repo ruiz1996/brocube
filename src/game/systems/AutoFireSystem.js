@@ -17,8 +17,7 @@ export class AutoFireSystem {
   update(dt) {
     this.timeUntilShot -= dt;
     if (this.timeUntilShot > 0) return;
-    const randomized = this.scene.upgrades.levels.multiShot > 0;
-    this.#fireBall({ randomized });
+    this.#fireBall({ randomized: false });
     if (this.random() < this.scene.upgrades.extraBallChance) {
       this.#fireBall({ randomized: true, source: 'multi-shot' });
     }
@@ -53,8 +52,8 @@ export class AutoFireSystem {
         },
         periodicEffects: [{
           id: 'area-blast',
-          interval: GAME.upgrade.blastInterval,
-          initialDelay: GAME.upgrade.blastInterval,
+          interval: this.scene.upgrades.blastInterval,
+          initialDelay: this.scene.upgrades.blastInterval,
           config: {
             radius: GAME.upgrade.blastRadius,
             damage: GAME.upgrade.blastDamage,
@@ -89,6 +88,7 @@ export class AutoFireSystem {
       ...shot,
       speed: GAME.ball.speed,
       speedMultiplier: this.scene.upgrades.ballSpeedMultiplier * speedMultiplier,
+      launchSource: source,
       visualOverrides,
       periodicEffects,
     });
