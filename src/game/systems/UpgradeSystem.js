@@ -37,6 +37,7 @@ const UPGRADE_PREREQUISITES = {
 };
 
 const UPGRADE_MAX_LEVEL_KEYS = {
+  rapidFire: 'rapidFireMaxLevel',
   topLaunch: 'topLaunchMaxLevel',
   topRecovery: 'topRecoveryMaxLevel',
   blastLaunch: 'blastLaunchMaxLevel',
@@ -57,8 +58,11 @@ const UPGRADE_MAX_LEVEL_KEYS = {
 
 export function calculateUpgradeScoreCost(upgradeIndex, config = GAME.upgrade) {
   const index = Math.max(0, upgradeIndex);
+  const lateIndex = Math.max(0, index - (config.scoreLateGrowthStart ?? Infinity));
   const rawCost = config.scoreInterval * (
     1 + config.scoreGrowthCoefficient * index ** config.scoreGrowthExponent
+      + (config.scoreLateGrowthCoefficient ?? 0)
+        * lateIndex ** (config.scoreLateGrowthExponent ?? 1)
   );
   const rounding = Math.max(1, config.scoreCostRounding);
   return Math.max(rounding, Math.round(rawCost / rounding) * rounding);
@@ -273,6 +277,7 @@ export class UpgradeSystem {
         id: 'rapidFire',
         name: '高速装填',
         level: this.levels.rapidFire,
+        maxLevel: GAME.upgrade.rapidFireMaxLevel,
         description: `发射间隔 ${this.fireInterval.toFixed(2)}s → ${Math.max(GAME.upgrade.minimumFireInterval, this.fireInterval * GAME.upgrade.rapidFireMultiplier).toFixed(2)}s`,
       },
       {

@@ -83,7 +83,10 @@ export class BallCombatSystem {
       ball.level += 1;
       ball.levelUpAt = ball.age ?? 0;
       if (ball.contactDamage !== false) ball.damage += GAME.ball.levelDamageBonus;
-      ball.lives += GAME.ball.levelLivesBonus;
+      const livesBonus = ball.level === GAME.ball.levelLivesBonusLevel
+        ? GAME.ball.levelLivesBonus
+        : 0;
+      ball.lives += livesBonus;
       const skillBonuses = this.#applySkillLevelBonus(ball);
       this.scene.events.emit('ball:leveled', {
         ball,
@@ -93,7 +96,7 @@ export class BallCombatSystem {
         level: ball.level,
         kills: ball.kills,
         damageBonus: ball.contactDamage === false ? 0 : GAME.ball.levelDamageBonus,
-        livesBonus: GAME.ball.levelLivesBonus,
+        livesBonus,
         skillBonuses,
       });
     }

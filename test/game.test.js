@@ -376,19 +376,19 @@ test('主球与衍生球独立升级，特殊球同步获得各自的等级能�
   assert.equal(primary.level, 2);
   assert.equal(primary.levelUpAt, primary.age);
   assert.equal(primary.damage, GAME.combat.baseDamage + GAME.ball.levelDamageBonus);
-  assert.equal(primary.lives, GAME.ball.defaultLives + GAME.ball.levelLivesBonus);
+  assert.equal(primary.lives, GAME.ball.defaultLives);
 
   for (let count = 3; count < 9; count += 1) killBrick(primary);
   assert.equal(primary.level, 3);
   assert.equal(primary.kills, 9);
   assert.equal(primary.damage, GAME.combat.baseDamage + GAME.ball.levelDamageBonus * 2);
-  assert.equal(primary.lives, GAME.ball.defaultLives + GAME.ball.levelLivesBonus * 2);
+  assert.equal(primary.lives, GAME.ball.defaultLives + GAME.ball.levelLivesBonus);
 
   const derived = scene.ballFactory.createDerived({ x: 200, y: 400, angle: 0 });
   for (let count = 0; count < 3; count += 1) killBrick(derived);
   assert.equal(derived.level, 2);
   assert.equal(derived.damage, GAME.combat.baseDamage + GAME.ball.levelDamageBonus);
-  assert.equal(derived.lives, GAME.ball.defaultLives + GAME.ball.levelLivesBonus);
+  assert.equal(derived.lives, GAME.ball.defaultLives);
 
   const lightning = scene.ballFactory.createPrimary({
     definitionId: LIGHTNING_BALL_ID,
@@ -408,7 +408,7 @@ test('主球与衍生球独立升级，特殊球同步获得各自的等级能�
     lightning.damageEffects[0].config.additionalTargets,
     GAME.upgrade.lightningAdditionalTargets + GAME.ball.levelLightningTargetBonus,
   );
-  assert.equal(lightning.lives, GAME.ball.defaultLives + GAME.ball.levelLivesBonus);
+  assert.equal(lightning.lives, GAME.ball.defaultLives);
   for (let count = 3; count < 9; count += 1) killBrick(lightning, 'chain-lightning');
   assert.equal(lightning.level, 3);
   assert.equal(
@@ -419,6 +419,7 @@ test('主球与衍生球独立升级，特殊球同步获得各自的等级能�
     lightning.damageEffects[0].config.additionalTargets,
     GAME.upgrade.lightningAdditionalTargets + GAME.ball.levelLightningTargetBonus * 2,
   );
+  assert.equal(lightning.lives, GAME.ball.defaultLives + GAME.ball.levelLivesBonus);
 
   const blast = scene.ballFactory.createPrimary({
     x: 400,
@@ -479,6 +480,10 @@ test('主球与衍生球独立升级，特殊球同步获得各自的等级能�
   assert.equal(levelUps.filter(({ ball }) => ball === lightning).length, 2);
   assert.equal(levelUps.filter(({ ball }) => ball === blast).length, 2);
   assert.equal(levelUps.filter(({ ball }) => ball === voidBall).length, 2);
+  assert.deepEqual(
+    levelUps.filter(({ ball }) => ball === primary).map(({ livesBonus }) => livesBonus),
+    [0, GAME.ball.levelLivesBonus],
+  );
   scene.exit();
 });
 
@@ -1377,9 +1382,14 @@ test('强化所需分数随已获得强化次数持续增加', () => {
   const firstCost = calculateUpgradeScoreCost(0);
   const secondCost = calculateUpgradeScoreCost(1);
   const tenthCost = calculateUpgradeScoreCost(9);
+  const twentiethCost = calculateUpgradeScoreCost(20);
+  const fortiethCost = calculateUpgradeScoreCost(40);
+  const baseCurveConfig = { ...GAME.upgrade, scoreLateGrowthCoefficient: 0 };
   assert.equal(firstCost, GAME.upgrade.scoreInterval);
   assert.ok(secondCost > firstCost);
   assert.ok(tenthCost > secondCost * 2);
+  assert.ok(twentiethCost > calculateUpgradeScoreCost(20, baseCurveConfig) * 1.4);
+  assert.ok(fortiethCost > calculateUpgradeScoreCost(40, baseCurveConfig) * 2.5);
 
   assert.deepEqual(
     calculateUpgradeProgress({ score: firstCost / 2, progressStart: 0, nextScore: firstCost }),
@@ -1510,6 +1520,12 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
   assert.equal(scene.upgrades.newBallLives, 4);
   assert.equal(scene.upgrades.isAvailable('ballLives'), false);
 
+  for (let level = 0; level < GAME.upgrade.rapidFireMaxLevel; level += 1) {
+    chooseDirectly('rapidFire');
+  }
+  assert.equal(scene.upgrades.levels.rapidFire, 5);
+  assert.equal(scene.upgrades.isAvailable('rapidFire'), false);
+
   chooseDirectly('topLaunch');
   for (let level = 0; level < GAME.upgrade.topRecoveryMaxLevel; level += 1) {
     chooseDirectly('topRecovery');
@@ -1539,6 +1555,7 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
     'paddleLength',
     'bottomBounce',
     'ballLives',
+    'rapidFire',
     'topLaunch',
     'topRecovery',
     'blastLaunch',
@@ -1583,12 +1600,19 @@ test('连续三秒内击杀形成连击倍率，超时后清零', () => {
   assert.equal(ComboPlugin.scoreMultiplier(), 1);
   events.emit('brick:destroyed');
   assert.equal(ComboPlugin.combo, 2);
-  assert.ok(Math.abs(ComboPlugin.scoreMultiplier() - 1.1) < .0001);
+  assert.ok(Math.abs(
+    ComboPlugin.scoreMultiplier() - (1 + GAME.combo.multiplierPerKill)
+  ) < .0001);
 
   ComboPlugin.afterUpdate(2.9, context);
   events.emit('brick:destroyed');
   assert.equal(ComboPlugin.combo, 3);
-  assert.ok(Math.abs(ComboPlugin.scoreMultiplier() - 1.2) < .0001);
+  assert.ok(Math.abs(
+    ComboPlugin.scoreMultiplier() - (1 + GAME.combo.multiplierPerKill * 2)
+  ) < .0001);
+
+  for (let count = 0; count < 30; count += 1) events.emit('brick:destroyed');
+  assert.equal(ComboPlugin.scoreMultiplier(), GAME.combo.maximumMultiplier);
 
   ComboPlugin.afterUpdate(3.01, context);
   assert.equal(ComboPlugin.combo, 0);
