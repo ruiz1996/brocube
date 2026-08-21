@@ -251,7 +251,7 @@ test('Supabase REST 接入可创建匿名用户、保存可重名昵称、提交
     { access_token: 'access', refresh_token: 'refresh', expires_in: 3600, user: { id: userId } },
     [],
     [{ user_id: userId, display_name: '同名玩家' }],
-    [{ id: 1, user_id: userId, score: 3210 }],
+    null,
     [{ rank: 1, player_code: 'AB12', display_name: '同名玩家', score: 3210, is_current: true }],
   ];
   const fetcher = async (url, options) => {
@@ -282,6 +282,8 @@ test('Supabase REST 接入可创建匿名用户、保存可重名昵称、提交
   assert.match(requests[0].url, /\/auth\/v1\/signup$/);
   assert.deepEqual(JSON.parse(requests[0].options.body), { data: {}, gotrue_meta_security: {} });
   assert.ok(requests.slice(1).every(({ options }) => options.headers.Authorization === 'Bearer access'));
+  const runRequest = requests.find(({ url }) => url.endsWith('/rest/v1/game_runs'));
+  assert.equal(runRequest.options.headers.Prefer, 'return=minimal');
   assert.match(requests.at(-1).url, /\/rest\/v1\/rpc\/get_leaderboard$/);
 });
 

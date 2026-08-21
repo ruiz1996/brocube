@@ -79,12 +79,15 @@ class SupabaseRestClient {
 
   async submitRun(run) {
     const session = await this.ensureSession();
-    const rows = await this.#databaseRequest('/rest/v1/game_runs', {
+    await this.#databaseRequest('/rest/v1/game_runs', {
       method: 'POST',
-      prefer: 'return=representation',
+      // game_runs intentionally has an INSERT policy but no direct SELECT policy.
+      // Returning the inserted row would therefore make PostgREST perform a read
+      // that RLS rejects even though the insert itself is allowed.
+      prefer: 'return=minimal',
       body: { ...run, user_id: session.user.id },
     });
-    return rows[0];
+    return run;
   }
 
   async getLeaderboard(channel, limit) {
