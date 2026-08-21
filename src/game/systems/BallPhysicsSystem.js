@@ -163,8 +163,17 @@ export class BallPhysicsSystem {
             reason: topRecoverySaved ? 'top-recovery' : 'bottom-bounce',
           });
         } else {
-          ball.destroy();
-          events.emit('ball:lost', { ball });
+          ball.lives = Math.max(0, ball.lives - 1);
+          events.emit('ball:life-lost', { ball, lives: ball.lives });
+          if (ball.lives > 0) {
+            ball.y = GAME.playBottom - ball.radius;
+            ball.velocityY = -Math.abs(ball.velocityY);
+            events.emit('ball:bounce', { ball, surface: 'bottom' });
+            events.emit('ball:saved', { ball, reason: 'remaining-lives' });
+          } else {
+            ball.destroy();
+            events.emit('ball:lost', { ball, lives: ball.lives });
+          }
         }
       }
     }

@@ -24,8 +24,11 @@ export class Ball extends Entity {
     speed = GAME.ball.speed,
     angle = -Math.PI / 2,
     launchSource = 'manual',
+    level = GAME.ball.defaultLevel,
+    lives = GAME.ball.defaultLives,
+    kills = 0,
     radius = GAME.ball.radius,
-    damage = 1,
+    damage = GAME.combat.baseDamage,
     damageType = 'kinetic',
     contactDamage = true,
     damageEffects = [],
@@ -41,6 +44,9 @@ export class Ball extends Entity {
       definitionId,
       role,
       launchSource,
+      level: Math.max(1, Math.round(level)),
+      lives: Math.max(0, Math.round(lives)),
+      kills: Math.max(0, Math.round(kills)),
       x: x ?? GAME.width / 2,
       y: y ?? GAME.paddle.y - 14,
       radius,
@@ -88,7 +94,7 @@ export class Ball extends Entity {
 }
 
 export class Brick extends Entity {
-  constructor({ x, y, width, height, points, hitPoints = 1, color, score = 100, variant = 'normal' }) {
+  constructor({ x, y, width, height, points, hitPoints = GAME.combat.baseHealth, color, score = 100, variant = 'normal' }) {
     super('brick', {
       tags: ['collidable', 'breakable'],
       x, y, width, height,
@@ -102,7 +108,7 @@ export class Brick extends Entity {
     });
   }
 
-  damage(amount = 1) {
+  damage(amount = GAME.combat.baseDamage) {
     this.hitPoints -= amount;
     this.hitFlash = 1;
     if (this.hitPoints <= 0) this.destroy();

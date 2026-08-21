@@ -1,3 +1,6 @@
+import { GAME } from '../config.js';
+import { VOID_ORBIT_BALL_ID } from '../balls/BallDefinitionRegistry.js';
+
 export class BallCombatSystem {
   constructor(scene) { this.scene = scene; }
 
@@ -42,7 +45,7 @@ export class BallCombatSystem {
   applyDamage({
     ball,
     brick,
-    damage = 1,
+    damage = GAME.combat.baseDamage,
     damageType = ball?.damageType ?? 'kinetic',
     contact = null,
     cause = 'ball',
@@ -53,6 +56,7 @@ export class BallCombatSystem {
     const destroyed = brick.damage(appliedDamage);
     const payload = { brick, ball, damage: appliedDamage, damageType, destroyed, contact, cause };
     this.scene.events.emit('brick:hit', payload);
+    if (destroyed) this.#recordBallKill(ball, brick, cause);
     this.scene.events.emit(destroyed ? 'brick:destroyed' : 'brick:damaged', payload);
     if (triggerEffects && ball?.damageEffects?.length) {
       this.scene.ballBehaviors.runDamageEffects(ball.damageEffects, {
@@ -64,5 +68,79 @@ export class BallCombatSystem {
       });
     }
     return { damage: appliedDamage, destroyed };
+  }
+
+  #recordBallKill(ball, brick, cause) {
+    if (!ball || ball.type !== 'ball') return;
+    ball.kills = Math.max(0, Math.round(ball.kills ?? 0)) + 1;
+    const thresholds = GAME.ball.levelKillThresholds;
+    const maximumLevel = thresholds.length + 1;
+    while (
+      ball.level < maximumLevel
+      && ball.kills >= thresholds[ball.level - 1]
+    ) {
+      const previousLevel = ball.level;
+      ball.level += 1;
+      if (ball.contactDamage !== false) ball.damage += GAME.ball.levelDamageBonus;
+      ball.lives += GAME.ball.levelLivesBonus;
+      const skillBonuses = this.#applySkillLevelBonus(ball);
+      this.scene.events.emit('ball:leveled', {
+        ball,
+        brick,
+        cause,
+        previousLevel,
+        level: ball.level,
+        kills: ball.kills,
+        damageBonus: ball.contactDamage === false ? 0 : GAME.ball.levelDamageBonus,
+        livesBonus: GAME.ball.levelLivesBonus,
+        skillBonuses,
+      });
+    }
+  }
+
+  #applySkillLevelBonus(ball) {
+    const skillBonuses = {};
+    const blastEffect = ball.periodicEffects.find(({ id }) => id === 'area-blast');
+    if (blastEffect) {
+      blastEffect.config.damage = (blastEffect.config.damage ?? GAME.upgrade.blastDamage)
+        + GAME.ball.levelBlastDamageBonus;
+      blastEffect.config.radius = (blastEffect.config.radius ?? GAME.upgrade.blastRadius)
+        + GAME.ball.levelBlastRadiusBonus;
+      skillBonuses.blast = {
+        damage: blastEffect.config.damage,
+        radius: blastEffect.config.radius,
+      };
+    }
+
+    const lightningEffect = ball.damageEffects.find(({ id }) => id === 'chain-lightning');
+    if (lightningEffect) {
+      lightningEffect.config.damage = (lightningEffect.config.damage ?? GAME.upgrade.lightningDamage)
+        + GAME.ball.levelLightningDamageBonus;
+      lightningEffect.config.additionalTargets = (
+        lightningEffect.config.additionalTargets ?? GAME.upgrade.lightningAdditionalTargets
+      ) + GAME.ball.levelLightningTargetBonus;
+      skillBonuses.lightning = {
+        damage: lightningEffect.config.damage,
+        additionalTargets: lightningEffect.config.additionalTargets,
+      };
+    }
+
+    if (ball.definitionId === VOID_ORBIT_BALL_ID && ball.orbiters.length > 0) {
+      for (let count = 0; count < GAME.ball.levelVoidOrbiterBonus; count += 1) {
+        const template = ball.orbiters[0];
+        ball.orbiters.push({
+          ...template,
+          id: `orbiter-level-${ball.level}-${ball.orbiters.length}`,
+          visual: { ...template.visual },
+          brickContacts: new Set(),
+        });
+      }
+      const phaseOffset = ball.orbiters[0].phase;
+      for (let index = 0; index < ball.orbiters.length; index += 1) {
+        ball.orbiters[index].phase = phaseOffset + index * Math.PI * 2 / ball.orbiters.length;
+      }
+      skillBonuses.voidOrbit = { orbiterCount: ball.orbiters.length };
+    }
+    return skillBonuses;
   }
 }

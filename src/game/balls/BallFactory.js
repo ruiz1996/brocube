@@ -13,6 +13,9 @@ export class BallFactory {
     speed = GAME.ball.speed,
     speedMultiplier = 1,
     launchSource = 'manual',
+    level = GAME.ball.defaultLevel,
+    lives = GAME.ball.defaultLives,
+    damageOverride,
     visualOverrides = {},
     periodicEffects = [],
     orbitingDamageOverrides = {},
@@ -29,6 +32,9 @@ export class BallFactory {
       angle,
       speed: speed * speedMultiplier * definition.speedMultiplier,
       launchSource,
+      level,
+      lives,
+      damageOverride,
       visualOverrides,
       periodicEffects: [...definition.periodicEffects, ...periodicEffects],
       orbitingDamageOverrides,
@@ -37,18 +43,28 @@ export class BallFactory {
     });
   }
 
-  createDerived({ x, y, angle, speed = GAME.ball.speed }) {
+  createDerived({
+    x,
+    y,
+    angle,
+    speed = GAME.ball.speed,
+    level = GAME.ball.defaultLevel,
+    lives = GAME.ball.defaultLives,
+    damage = GAME.combat.baseDamage,
+  }) {
     const basic = this.definitions.get(BASIC_BALL_ID);
     return new Ball({
       definitionId: BASIC_BALL_ID,
       role: 'derived',
       launchSource: 'derived',
+      level,
+      lives,
       x,
       y,
       angle,
       speed,
       radius: GAME.ball.derivedRadius,
-      damage: 1,
+      damage,
       damageType: 'kinetic',
       contactDamage: true,
       damageEffects: [],
@@ -70,6 +86,9 @@ export class BallFactory {
     angle,
     speed,
     launchSource,
+    level,
+    lives,
+    damageOverride,
     visualOverrides = {},
     periodicEffects = [],
     orbitingDamageOverrides = {},
@@ -84,8 +103,10 @@ export class BallFactory {
       angle,
       speed,
       launchSource,
+      level,
+      lives,
       radius: definition.radius,
-      damage: definition.damage,
+      damage: damageOverride ?? definition.damage,
       damageType: definition.damageType,
       contactDamage: definition.contactDamage,
       damageEffects: definition.damageEffects.map((effect) => ({

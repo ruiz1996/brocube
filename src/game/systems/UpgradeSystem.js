@@ -22,6 +22,8 @@ const UPGRADE_IDS = [
   'lightning',
   'lightningJumps',
   'ballSpeed',
+  'ballDamage',
+  'ballLives',
   'paddleLength',
   'bottomBounce',
 ];
@@ -47,6 +49,8 @@ const UPGRADE_MAX_LEVEL_KEYS = {
   navigationStrength: 'navigationStrengthMaxLevel',
   lightning: 'lightningMaxLevel',
   lightningJumps: 'lightningJumpsMaxLevel',
+  ballDamage: 'ballDamageMaxLevel',
+  ballLives: 'ballLivesMaxLevel',
   paddleLength: 'paddleLengthMaxLevel',
   bottomBounce: 'bottomBounceMaxLevel',
 };
@@ -84,6 +88,8 @@ export class UpgradeSystem {
       lightning: 0,
       lightningJumps: 0,
       ballSpeed: 0,
+      ballDamage: 0,
+      ballLives: 0,
       paddleLength: 0,
       bottomBounce: 0,
     };
@@ -110,6 +116,15 @@ export class UpgradeSystem {
 
   get ballSpeedMultiplier() {
     return GAME.upgrade.ballSpeedMultiplierPerLevel ** this.levels.ballSpeed;
+  }
+
+  get ballDamageBonus() {
+    return GAME.upgrade.ballDamagePerLevel * this.levels.ballDamage;
+  }
+
+  get newBallLives() {
+    return GAME.ball.defaultLives
+      + GAME.upgrade.ballLivesPerLevel * this.levels.ballLives;
   }
 
   get voidOrbiterAngularSpeed() {
@@ -185,6 +200,10 @@ export class UpgradeSystem {
         ball.velocityY *= multiplier;
         ball.speed *= multiplier;
       }
+    } else if (id === 'ballDamage') {
+      for (const ball of this.scene.world.all('ball')) {
+        if (ball.contactDamage !== false) ball.damage += GAME.upgrade.ballDamagePerLevel;
+      }
     } else if (id === 'paddleLength') {
       const paddle = this.scene.world.all('paddle').find(({ role }) => role === 'primary');
       if (paddle) {
@@ -229,7 +248,10 @@ export class UpgradeSystem {
       for (const ball of this.scene.world.all('ball')) {
         if (ball.definitionId !== LIGHTNING_BALL_ID) continue;
         const effect = ball.damageEffects.find(({ id: effectId }) => effectId === 'chain-lightning');
-        if (effect) effect.config.additionalTargets = this.lightningAdditionalTargets;
+        if (effect) {
+          effect.config.additionalTargets = this.lightningAdditionalTargets
+            + (ball.level - 1) * GAME.ball.levelLightningTargetBonus;
+        }
       }
     }
 
@@ -278,6 +300,20 @@ export class UpgradeSystem {
         name: '动能超频',
         level: this.levels.ballSpeed,
         description: `所有球速度提升 ${Math.round((GAME.upgrade.ballSpeedMultiplierPerLevel - 1) * 100)}%`,
+      },
+      {
+        id: 'ballDamage',
+        name: '攻击强化',
+        level: this.levels.ballDamage,
+        maxLevel: GAME.upgrade.ballDamageMaxLevel,
+        description: `球的直接碰撞伤害额外 +${this.ballDamageBonus} → +${this.ballDamageBonus + GAME.upgrade.ballDamagePerLevel}；不影响爆炸、闪电链和虚空子球`,
+      },
+      {
+        id: 'ballLives',
+        name: '生命增幅',
+        level: this.levels.ballLives,
+        maxLevel: GAME.upgrade.ballLivesMaxLevel,
+        description: `新生成球的生命 ${this.newBallLives} → ${this.newBallLives + GAME.upgrade.ballLivesPerLevel}（最多强化 ${GAME.upgrade.ballLivesMaxLevel} 次）`,
       },
       {
         id: 'topLaunch',
@@ -365,11 +401,27 @@ export class UpgradeSystem {
       },
     ].filter((option) => this.isAvailable(option.id));
 
+    const lowPriorityIndex = candidates.findIndex(({ id }) => id === 'ballDamage');
+    const lowPriorityOption = lowPriorityIndex >= 0
+      ? candidates.splice(lowPriorityIndex, 1)[0]
+      : null;
+
     for (let index = candidates.length - 1; index > 0; index -= 1) {
       const target = Math.floor(this.random() * (index + 1));
       [candidates[index], candidates[target]] = [candidates[target], candidates[index]];
     }
-    return candidates.slice(0, 3);
+    const selected = candidates.slice(0, 3);
+    if (lowPriorityOption && (
+      selected.length < 3 || this.random() < GAME.upgrade.ballDamageOfferChance
+    )) {
+      if (selected.length >= 3) selected.pop();
+      selected.push(lowPriorityOption);
+    }
+    for (let index = selected.length - 1; index > 0; index -= 1) {
+      const target = Math.floor(this.random() * (index + 1));
+      [selected[index], selected[target]] = [selected[target], selected[index]];
+    }
+    return selected;
   }
 
   #offer() {

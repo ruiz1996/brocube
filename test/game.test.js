@@ -6,6 +6,7 @@ import { GameEngine } from '../src/core/GameEngine.js';
 import { InputManager, mapPointerToElement } from '../src/core/InputManager.js';
 import { BreakoutScene } from '../src/game/BreakoutScene.js';
 import { GAME } from '../src/game/config.js';
+import { Brick } from '../src/game/entities/entities.js';
 import {
   calculateBrickSizeHealthMultiplier,
   calculateExpectedBrickHitPoints,
@@ -155,7 +156,9 @@ test('生存玩法可自动发球、击毁多边形且落球不结束游戏', ()
   assert.ok(ball);
 
   const brick = scene.world.first('brick');
-  while (brick.active) scene.ballCombat.applyDamage({ ball, brick, damage: 1, cause: 'test' });
+  while (brick.active) {
+    scene.ballCombat.applyDamage({ ball, brick, damage: GAME.combat.baseDamage, cause: 'test' });
+  }
   scene.world.flush();
   assert.ok(scene.score >= 100);
   assert.equal(brick.active, false);
@@ -170,6 +173,310 @@ test('生存玩法可自动发球、击毁多边形且落球不结束游戏', ()
   breachingBrick.y = GAME.playBottom;
   scene.update(1 / 120);
   assert.equal(scene.state, 'lost');
+  scene.exit();
+});
+
+test('球触底扣除一点生命，生命耗尽后才消失', () => {
+  const events = new EventBus();
+  const lifeLosses = [];
+  const saves = [];
+  const losses = [];
+  events.on('ball:life-lost', (payload) => lifeLosses.push(payload));
+  events.on('ball:saved', (payload) => saves.push(payload));
+  events.on('ball:lost', (payload) => losses.push(payload));
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  scene.ballPhysics.random = () => 1;
+
+  const ball = scene.ballFactory.createPrimary({
+    x: GAME.width / 2,
+    y: GAME.playBottom + GAME.ball.radius + 1,
+    angle: Math.PI / 2,
+    lives: 2,
+  });
+  scene.world.add(ball);
+  scene.world.flush();
+
+  scene.ballPhysics.update(0);
+  assert.equal(ball.lives, 1);
+  assert.equal(ball.active, true);
+  assert.ok(ball.velocityY < 0);
+  assert.equal(lifeLosses.length, 1);
+  assert.equal(saves[0].reason, 'remaining-lives');
+  assert.equal(losses.length, 0);
+
+  ball.y = GAME.playBottom + ball.radius + 1;
+  ball.velocityY = Math.abs(ball.velocityY);
+  scene.ballPhysics.update(0);
+  assert.equal(ball.lives, 0);
+  assert.equal(ball.active, false);
+  assert.equal(lifeLosses.length, 2);
+  assert.equal(losses.length, 1);
+  assert.equal(losses[0].lives, 0);
+  scene.exit();
+});
+
+test('生命增幅只强化新生成的球，最多可选择三级', () => {
+  const events = new EventBus();
+  const launches = [];
+  events.on('ball:launched', ({ ball }) => launches.push(ball));
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  const existingBall = scene.ballFactory.createPrimary({ x: 100, y: 400, angle: 0 });
+  scene.world.add(existingBall);
+  scene.world.flush();
+  scene.autoFire.random = () => .99;
+
+  for (let level = 1; level <= GAME.upgrade.ballLivesMaxLevel; level += 1) {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+    assert.equal(scene.chooseUpgrade('ballLives'), true);
+    assert.equal(existingBall.lives, GAME.ball.defaultLives);
+    assert.equal(
+      scene.upgrades.newBallLives,
+      GAME.ball.defaultLives + GAME.upgrade.ballLivesPerLevel * level,
+    );
+
+    scene.autoFire.timeUntilShot = 0;
+    scene.update(1 / 120);
+    assert.equal(launches.at(-1).lives, scene.upgrades.newBallLives);
+  }
+
+  assert.equal(scene.upgrades.isAvailable('ballLives'), false);
+  assert.equal(scene.upgrades.options().some(({ id }) => id === 'ballLives'), false);
+  scene.exit();
+});
+
+test('攻击强化提升直接碰撞伤害但不影响技能伤害，并以低优先级出现', () => {
+  const events = new EventBus();
+  const launches = [];
+  events.on('ball:launched', ({ ball }) => launches.push(ball));
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  const directBall = scene.ballFactory.createPrimary({ x: 100, y: 400, angle: 0 });
+  const lightningBall = scene.ballFactory.createPrimary({
+    definitionId: LIGHTNING_BALL_ID,
+    x: 200,
+    y: 400,
+    angle: 0,
+  });
+  const blastBall = scene.ballFactory.createPrimary({
+    x: 300,
+    y: 400,
+    angle: 0,
+    periodicEffects: [{
+      id: 'area-blast',
+      interval: 1,
+      config: { damage: GAME.upgrade.blastDamage },
+    }],
+  });
+  scene.world.add(directBall);
+  scene.world.add(lightningBall);
+  scene.world.add(blastBall);
+  scene.world.flush();
+
+  const chooseDirectly = () => {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+    assert.equal(scene.chooseUpgrade('ballDamage'), true);
+  };
+  chooseDirectly();
+  assert.equal(directBall.damage, GAME.combat.baseDamage + 1);
+  assert.equal(blastBall.damage, GAME.combat.baseDamage + 1);
+  assert.equal(blastBall.periodicEffects[0].config.damage, GAME.upgrade.blastDamage);
+  assert.equal(lightningBall.damage, 0);
+  assert.equal(
+    lightningBall.damageEffects[0].config.damage,
+    GAME.upgrade.lightningDamage,
+  );
+
+  scene.autoFire.random = () => .99;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  assert.equal(launches.at(-1).damage, GAME.combat.baseDamage + 1);
+
+  scene.upgrades.random = () => .99;
+  assert.equal(scene.upgrades.options().some(({ id }) => id === 'ballDamage'), false);
+  scene.upgrades.random = () => 0;
+  assert.equal(scene.upgrades.options().some(({ id }) => id === 'ballDamage'), true);
+
+  for (let level = 1; level < GAME.upgrade.ballDamageMaxLevel; level += 1) chooseDirectly();
+  assert.equal(scene.upgrades.levels.ballDamage, GAME.upgrade.ballDamageMaxLevel);
+  assert.equal(scene.upgrades.ballDamageBonus, GAME.upgrade.ballDamageMaxLevel);
+  assert.equal(directBall.damage, GAME.combat.baseDamage + GAME.upgrade.ballDamageMaxLevel);
+  assert.equal(scene.upgrades.isAvailable('ballDamage'), false);
+  assert.equal(scene.upgrades.options().some(({ id }) => id === 'ballDamage'), false);
+  scene.exit();
+});
+
+test('主球与衍生球独立升级，特殊球同步获得各自的等级能力', () => {
+  const events = new EventBus();
+  const levelUps = [];
+  events.on('ball:leveled', (payload) => levelUps.push(payload));
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  const killBrick = (ball, cause = 'test-kill') => {
+    const brick = new Brick({
+      x: 0,
+      y: 0,
+      width: 20,
+      height: 20,
+      hitPoints: GAME.combat.baseHealth,
+      score: 0,
+    });
+    scene.ballCombat.applyDamage({
+      ball,
+      brick,
+      damage: GAME.combat.baseHealth,
+      cause,
+    });
+  };
+
+  const primary = scene.ballFactory.createPrimary({ x: 100, y: 400, angle: 0 });
+  for (let count = 0; count < 2; count += 1) killBrick(primary);
+  assert.equal(primary.level, 1);
+  assert.equal(primary.kills, 2);
+  assert.equal(primary.damage, GAME.combat.baseDamage);
+  assert.equal(primary.lives, GAME.ball.defaultLives);
+
+  killBrick(primary);
+  assert.equal(primary.level, 2);
+  assert.equal(primary.damage, GAME.combat.baseDamage + GAME.ball.levelDamageBonus);
+  assert.equal(primary.lives, GAME.ball.defaultLives + GAME.ball.levelLivesBonus);
+
+  for (let count = 3; count < 9; count += 1) killBrick(primary);
+  assert.equal(primary.level, 3);
+  assert.equal(primary.kills, 9);
+  assert.equal(primary.damage, GAME.combat.baseDamage + GAME.ball.levelDamageBonus * 2);
+  assert.equal(primary.lives, GAME.ball.defaultLives + GAME.ball.levelLivesBonus * 2);
+
+  const derived = scene.ballFactory.createDerived({ x: 200, y: 400, angle: 0 });
+  for (let count = 0; count < 3; count += 1) killBrick(derived);
+  assert.equal(derived.level, 2);
+  assert.equal(derived.damage, GAME.combat.baseDamage + GAME.ball.levelDamageBonus);
+  assert.equal(derived.lives, GAME.ball.defaultLives + GAME.ball.levelLivesBonus);
+
+  const lightning = scene.ballFactory.createPrimary({
+    definitionId: LIGHTNING_BALL_ID,
+    x: 300,
+    y: 400,
+    angle: 0,
+  });
+  const chainDamage = lightning.damageEffects[0].config.damage;
+  for (let count = 0; count < 3; count += 1) killBrick(lightning, 'chain-lightning');
+  assert.equal(lightning.level, 2);
+  assert.equal(lightning.damage, 0);
+  assert.equal(
+    lightning.damageEffects[0].config.damage,
+    chainDamage + GAME.ball.levelLightningDamageBonus,
+  );
+  assert.equal(
+    lightning.damageEffects[0].config.additionalTargets,
+    GAME.upgrade.lightningAdditionalTargets + GAME.ball.levelLightningTargetBonus,
+  );
+  assert.equal(lightning.lives, GAME.ball.defaultLives + GAME.ball.levelLivesBonus);
+  for (let count = 3; count < 9; count += 1) killBrick(lightning, 'chain-lightning');
+  assert.equal(lightning.level, 3);
+  assert.equal(
+    lightning.damageEffects[0].config.damage,
+    chainDamage + GAME.ball.levelLightningDamageBonus * 2,
+  );
+  assert.equal(
+    lightning.damageEffects[0].config.additionalTargets,
+    GAME.upgrade.lightningAdditionalTargets + GAME.ball.levelLightningTargetBonus * 2,
+  );
+
+  const blast = scene.ballFactory.createPrimary({
+    x: 400,
+    y: 400,
+    angle: 0,
+    periodicEffects: [{
+      id: 'area-blast',
+      interval: 1,
+      config: { damage: GAME.upgrade.blastDamage, radius: GAME.upgrade.blastRadius },
+    }],
+  });
+  for (let count = 0; count < 3; count += 1) killBrick(blast, 'periodic-explosion');
+  assert.equal(blast.level, 2);
+  assert.equal(blast.damage, GAME.combat.baseDamage + GAME.ball.levelDamageBonus);
+  assert.equal(
+    blast.periodicEffects[0].config.damage,
+    GAME.upgrade.blastDamage + GAME.ball.levelBlastDamageBonus,
+  );
+  assert.equal(
+    blast.periodicEffects[0].config.radius,
+    GAME.upgrade.blastRadius + GAME.ball.levelBlastRadiusBonus,
+  );
+  for (let count = 3; count < 9; count += 1) killBrick(blast, 'periodic-explosion');
+  assert.equal(blast.level, 3);
+  assert.equal(
+    blast.periodicEffects[0].config.damage,
+    GAME.upgrade.blastDamage + GAME.ball.levelBlastDamageBonus * 2,
+  );
+  assert.equal(
+    blast.periodicEffects[0].config.radius,
+    GAME.upgrade.blastRadius + GAME.ball.levelBlastRadiusBonus * 2,
+  );
+
+  const voidBall = scene.ballFactory.createPrimary({
+    definitionId: VOID_ORBIT_BALL_ID,
+    x: 500,
+    y: 400,
+    angle: 0,
+  });
+  const orbiterDamage = voidBall.orbiters[0].damage;
+  for (let count = 0; count < 3; count += 1) killBrick(voidBall, 'orbiting-satellite');
+  assert.equal(voidBall.level, 2);
+  assert.equal(voidBall.orbiters.length, 3);
+  assert.ok(voidBall.orbiters.every(({ damage }) => damage === orbiterDamage));
+  for (let count = 3; count < 9; count += 1) killBrick(voidBall, 'orbiting-satellite');
+  assert.equal(voidBall.level, 3);
+  assert.equal(voidBall.orbiters.length, 4);
+  assert.ok(voidBall.orbiters.every(({ brickContacts }) => brickContacts instanceof Set));
+  for (let index = 1; index < voidBall.orbiters.length; index += 1) {
+    assert.ok(Math.abs(
+      voidBall.orbiters[index].phase - voidBall.orbiters[index - 1].phase
+        - Math.PI * 2 / voidBall.orbiters.length,
+    ) < .0001);
+  }
+
+  assert.equal(levelUps.filter(({ ball }) => ball === primary).length, 2);
+  assert.equal(levelUps.filter(({ ball }) => ball === derived).length, 1);
+  assert.equal(levelUps.filter(({ ball }) => ball === lightning).length, 2);
+  assert.equal(levelUps.filter(({ ball }) => ball === blast).length, 2);
+  assert.equal(levelUps.filter(({ ball }) => ball === voidBall).length, 2);
   scene.exit();
 });
 
@@ -188,10 +495,19 @@ test('球工厂保留特殊主球配置，但强制衍生球为基础球', () =>
   });
   const factory = new BallFactory(definitions);
 
-  const primary = factory.createPrimary({ definitionId: 'storm-piercer', x: 20, y: 30, angle: 0 });
+  const primary = factory.createPrimary({
+    definitionId: 'storm-piercer',
+    x: 20,
+    y: 30,
+    angle: 0,
+    level: 3,
+    lives: 2,
+  });
   assert.equal(primary.definitionId, 'storm-piercer');
   assert.equal(primary.role, 'primary');
   assert.equal(primary.damage, 4);
+  assert.equal(primary.level, 3);
+  assert.equal(primary.lives, 2);
   assert.equal(primary.damageType, 'electric');
   assert.deepEqual(primary.damageEffects, [{ id: 'chain-lightning', config: {} }]);
   assert.equal(primary.collisionPolicy, 'pierce');
@@ -199,17 +515,39 @@ test('球工厂保留特殊主球配置，但强制衍生球为基础球', () =>
   assert.equal(primary.periodicEffects[0].id, 'energy-pulse');
   assert.equal(primary.periodicEffects[0].timeRemaining, 2);
 
-  const derived = factory.createDerived({ x: 20, y: 30, angle: 0 });
+  const derived = factory.createDerived({ x: 20, y: 30, angle: 0, level: 2, lives: 4 });
   assert.equal(derived.definitionId, BASIC_BALL_ID);
   assert.equal(derived.role, 'derived');
   assert.equal(derived.radius, GAME.ball.derivedRadius);
-  assert.equal(derived.damage, 1);
+  assert.equal(derived.damage, GAME.combat.baseDamage);
+  assert.equal(derived.level, 2);
+  assert.equal(derived.lives, 4);
   assert.equal(derived.damageType, 'kinetic');
   assert.deepEqual(derived.damageEffects, []);
   assert.deepEqual(derived.periodicEffects, []);
   assert.equal(derived.collisionPolicy, 'bounce');
   assert.deepEqual(derived.collisionConfig, {});
   assert.deepEqual(derived.orbiters, []);
+});
+
+test('战斗数值统一放大十倍，球默认具备等级和生命属性', () => {
+  const definitions = createDefaultBallDefinitions();
+  const factory = new BallFactory(definitions);
+  const basic = factory.createPrimary({ x: 20, y: 30, angle: 0 });
+
+  assert.equal(GAME.combat.valueScale, 10);
+  assert.equal(GAME.combat.baseDamage, 10);
+  assert.equal(GAME.combat.baseHealth, 10);
+  assert.equal(definitions.get(BASIC_BALL_ID).damage, 10);
+  assert.equal(definitions.get(MICRO_NAVIGATION_BALL_ID).damage, 10);
+  assert.equal(definitions.get(VOID_ORBIT_BALL_ID).orbitingDamage.damage, 10);
+  assert.equal(
+    definitions.get(LIGHTNING_BALL_ID).damageEffects[0].config.damage,
+    10,
+  );
+  assert.equal(GAME.upgrade.blastDamage, 10);
+  assert.equal(basic.level, GAME.ball.defaultLevel);
+  assert.equal(basic.lives, GAME.ball.defaultLives);
 });
 
 test('发射器可独立切换挡板发射和顶部发射', () => {
@@ -523,8 +861,8 @@ test('爆裂核心替代普通球并带有周期范围伤害和独特外观', ()
   assert.equal(blastLaunch.ball.periodicEffects[0].id, 'area-blast');
 
   const target = scene.world.first('brick');
-  target.hitPoints = 10;
-  target.maxHitPoints = 10;
+  target.hitPoints = 100;
+  target.maxHitPoints = 100;
   blastLaunch.ball.x = target.x + target.width / 2;
   blastLaunch.ball.y = target.y + target.height / 2;
   const farBrick = scene.world.all('brick').find((brick) => (
@@ -534,8 +872,8 @@ test('爆裂核心替代普通球并带有周期范围伤害和独特外观', ()
     ) > GAME.upgrade.blastRadius + 40
   ));
   if (farBrick) {
-    farBrick.hitPoints = 10;
-    farBrick.maxHitPoints = 10;
+    farBrick.hitPoints = 100;
+    farBrick.maxHitPoints = 100;
   }
 
   scene.ballAbilities.update(GAME.upgrade.blastInterval);
@@ -543,8 +881,8 @@ test('爆裂核心替代普通球并带有周期范围伤害和独特外观', ()
   assert.equal(explosions.length, 1);
   assert.equal(explosions[0].radius, GAME.upgrade.blastRadius);
   assert.ok(explosions[0].hitBricks.includes(target));
-  assert.equal(target.hitPoints, 9);
-  if (farBrick) assert.equal(farBrick.hitPoints, 10);
+  assert.equal(target.hitPoints, 90);
+  if (farBrick) assert.equal(farBrick.hitPoints, 100);
   assert.equal(scene.world.all('blast-wave').length, 1);
   assert.ok(scene.world.all('particle').length >= 26);
   assert.equal(scene.upgrades.options().some((option) => option.id === 'blastLaunch'), false);
@@ -584,8 +922,8 @@ test('虚空双星由核心负责反弹死亡，两颗子球独立造成接触�
 
   const voidBall = voidLaunch.ball;
   const target = scene.world.first('brick');
-  target.hitPoints = 10;
-  target.maxHitPoints = 10;
+  target.hitPoints = 100;
+  target.maxHitPoints = 100;
   voidBall.velocityX = 100;
   voidBall.velocityY = 0;
   const coreHit = scene.ballCombat.resolveBrickCollision({
@@ -594,7 +932,7 @@ test('虚空双星由核心负责反弹死亡，两颗子球独立造成接触�
     normal: { nx: -1, ny: 0, depth: 1 },
   });
   assert.equal(coreHit.damage, 0);
-  assert.equal(target.hitPoints, 10);
+  assert.equal(target.hitPoints, 100);
   assert.ok(voidBall.velocityX < 0);
 
   const targetPoints = target.worldPoints();
@@ -604,15 +942,15 @@ test('虚空双星由核心负责反弹死亡，两颗子球独立造成接触�
   voidBall.x = targetCenterX - GAME.upgrade.voidOrbitRadius;
   voidBall.y = targetCenterY;
   scene.orbiterDamage.update();
-  assert.equal(target.hitPoints, 9);
+  assert.equal(target.hitPoints, 90);
   scene.orbiterDamage.update();
-  assert.equal(target.hitPoints, 9);
+  assert.equal(target.hitPoints, 90);
 
   voidBall.x -= 100;
   scene.orbiterDamage.update();
   voidBall.x += 100;
   scene.orbiterDamage.update();
-  assert.equal(target.hitPoints, 8);
+  assert.equal(target.hitPoints, 80);
 
   voidBall.y = GAME.playBottom + voidBall.radius + 1;
   voidBall.velocityY = 100;
@@ -778,8 +1116,8 @@ test('闪电球以闪电链代替常规伤害，扩链强化增加额外目标�
   nearby.x = target.x + 20;
   nearby.y = target.y + 10;
   for (const brick of bricks) {
-    brick.hitPoints = 10;
-    brick.maxHitPoints = 10;
+    brick.hitPoints = 100;
+    brick.maxHitPoints = 100;
   }
   lightningBall.velocityX = 100;
   lightningBall.velocityY = 0;
@@ -789,10 +1127,10 @@ test('闪电球以闪电链代替常规伤害，扩链强化增加额外目标�
     normal: { nx: -1, ny: 0, depth: 1 },
   });
   assert.equal(result.damage, 0);
-  assert.equal(target.hitPoints, 9);
+  assert.equal(target.hitPoints, 90);
   assert.equal(chains.length, 1);
   assert.equal(chains[0].targets.length, 2);
-  assert.equal(chains[0].targets[1].hitPoints, 9);
+  assert.equal(chains[0].targets[1].hitPoints, 90);
   assert.ok(lightningBall.velocityX < 0);
   scene.world.flush();
   assert.equal(scene.world.all('lightning-arc').length, 1);
@@ -924,11 +1262,11 @@ test('天顶续航在普通底线判定失败后为天顶球追加独立保留�
 });
 
 test('方块血量按可调公式随时间和分数无上限增长', () => {
-  assert.equal(calculateExpectedBrickHitPoints({ elapsed: 0, score: 0 }), 1.4);
-  assert.ok(calculateExpectedBrickHitPoints({ elapsed: 60, score: 0 }) > 2);
-  assert.ok(calculateExpectedBrickHitPoints({ elapsed: 0, score: 5000 }) > 2);
-  assert.ok(calculateExpectedBrickHitPoints({ elapsed: 600, score: 100000 }) > 15);
-  assert.equal(selectBrickHitPoints({ elapsed: 0, score: 0 }, () => .5), 1);
+  assert.equal(calculateExpectedBrickHitPoints({ elapsed: 0, score: 0 }), 14);
+  assert.ok(calculateExpectedBrickHitPoints({ elapsed: 60, score: 0 }) > 20);
+  assert.ok(calculateExpectedBrickHitPoints({ elapsed: 0, score: 5000 }) > 20);
+  assert.ok(calculateExpectedBrickHitPoints({ elapsed: 600, score: 100000 }) > 150);
+  assert.equal(selectBrickHitPoints({ elapsed: 0, score: 0 }, () => .5), 14);
 
   const smallest = { width: GAME.brick.minWidth, height: GAME.brick.minHeight };
   const largest = { width: GAME.brick.maxWidth, height: GAME.brick.maxHeight };
@@ -1148,6 +1486,12 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
   assert.ok(Math.abs(scene.upgrades.bottomBounceChance - .6) < .0001);
   assert.equal(scene.upgrades.isAvailable('bottomBounce'), false);
 
+  for (let level = 0; level < GAME.upgrade.ballLivesMaxLevel; level += 1) {
+    chooseDirectly('ballLives');
+  }
+  assert.equal(scene.upgrades.newBallLives, 4);
+  assert.equal(scene.upgrades.isAvailable('ballLives'), false);
+
   chooseDirectly('topLaunch');
   for (let level = 0; level < GAME.upgrade.topRecoveryMaxLevel; level += 1) {
     chooseDirectly('topRecovery');
@@ -1176,6 +1520,7 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
   const cappedUpgradeIds = [
     'paddleLength',
     'bottomBounce',
+    'ballLives',
     'topLaunch',
     'topRecovery',
     'blastLaunch',

@@ -1,3 +1,5 @@
+import { GAME } from '../game/config.js';
+
 export function calculateUpgradeProgress({ score, progressStart, nextScore }) {
   const start = Math.max(0, progressStart ?? 0);
   const target = Math.max(start + 1, nextScore ?? start + 1);
@@ -58,7 +60,11 @@ export class GameUI {
     events.on('game:lost', (data) => { this.#hideUpgrades(); this.#showOverlay('DEFENSE BREACHED', '防线失守', `坚持了 ${this.#formatTime(data.elapsed)}，最终得分 ${String(Math.round(data.score)).padStart(6, '0')}。`, '重新开始'); });
     events.on('engine:paused', () => this.#showOverlay('SYSTEM PAUSED', '游戏暂停', '能量场已冻结，准备好后继续。', '继续游戏'));
     events.on('engine:resumed', () => { if (this.scene.state === 'playing') this.#hideOverlay(); });
-    events.on('brick:destroyed', ({ brick }) => this.audio.play(260 + brick.maxHitPoints * 52, .04, .022));
+    events.on('brick:destroyed', ({ brick }) => this.audio.play(
+      260 + brick.maxHitPoints / GAME.combat.valueScale * 52,
+      .04,
+      .022,
+    ));
     events.on('ball:bounce', ({ surface }) => this.audio.play(surface === 'paddle' ? 180 : 120, .025, .012));
     events.on('ball:launched', () => this.audio.play(340, .06, .018));
     events.on('brick:breached', () => this.audio.play(70, .28, .04));

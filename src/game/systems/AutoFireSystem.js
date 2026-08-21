@@ -153,6 +153,10 @@ export class AutoFireSystem {
     const ball = this.scene.ballFactory.createPrimary({
       definitionId, ...shot, speed: GAME.ball.speed,
       speedMultiplier: this.scene.upgrades.ballSpeedMultiplier * speedMultiplier,
+      lives: this.scene.upgrades.newBallLives,
+      damageOverride: definition.contactDamage === false
+        ? definition.damage
+        : definition.damage + this.scene.upgrades.ballDamageBonus,
       launchSource: source, visualOverrides, periodicEffects,
       orbitingDamageOverrides, guidanceOverrides, damageEffectConfigOverrides,
     });

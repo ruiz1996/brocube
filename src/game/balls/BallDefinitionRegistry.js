@@ -30,7 +30,7 @@ function normalizeOrbitingDamage(config) {
     radius: Math.max(1, config.radius ?? 4),
     angularSpeed: config.angularSpeed ?? 3,
     phaseOffset: config.phaseOffset ?? 0,
-    damage: Math.max(0, config.damage ?? 1),
+    damage: Math.max(0, config.damage ?? GAME.combat.baseDamage),
     damageType: config.damageType ?? 'kinetic',
     visual: {
       color: '#9b6cff',
@@ -47,7 +47,7 @@ export class BallDefinitionRegistry {
     if (!id || this.definitions.has(id)) throw new Error(`Ball definition already exists: ${id}`);
     this.definitions.set(id, {
       id,
-      damage: definition.damage ?? 1,
+      damage: definition.damage ?? GAME.combat.baseDamage,
       damageType: definition.damageType ?? 'kinetic',
       contactDamage: definition.contactDamage ?? true,
       radius: definition.radius ?? GAME.ball.radius,
@@ -84,7 +84,7 @@ export class BallDefinitionRegistry {
 
 export function createDefaultBallDefinitions() {
   return new BallDefinitionRegistry().register(BASIC_BALL_ID, {
-    damage: 1,
+    damage: GAME.combat.baseDamage,
     damageType: 'kinetic',
     collisionPolicy: 'bounce',
   }).register(VOID_ORBIT_BALL_ID, {
@@ -114,7 +114,7 @@ export function createDefaultBallDefinitions() {
       trailLength: 10,
     },
   }).register(MICRO_NAVIGATION_BALL_ID, {
-    damage: 1,
+    damage: GAME.combat.baseDamage,
     damageType: 'kinetic',
     collisionPolicy: 'bounce',
     guidance: {

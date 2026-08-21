@@ -4,6 +4,9 @@ import { GAME } from '../config.js';
 const PALETTE = ['#55e8ff', '#718bff', '#9b6cff', '#d760dc', '#ff5cab', '#ff796d', '#ffad5a'];
 const randomBetween = (min, max) => min + Math.random() * (max - min);
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
+const scoreForHealth = (hitPoints, multiplier = 1) => (
+  100 * hitPoints / GAME.combat.valueScale * multiplier
+);
 
 function cross(origin, a, b) {
   return (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x);
@@ -185,7 +188,7 @@ export class BrickFieldSystem {
       x: (GAME.width - width) / 2,
       hitPoints,
       color: '#ff3f8f',
-      score: 100 * hitPoints * GAME.brick.bossScoreMultiplier,
+      score: scoreForHealth(hitPoints, GAME.brick.bossScoreMultiplier),
       variant: 'boss',
     });
 
@@ -235,7 +238,7 @@ export class BrickFieldSystem {
       points: randomPolygon(width, height),
       hitPoints,
       color: options.color ?? PALETTE[Math.floor(Math.random() * PALETTE.length)],
-      score: options.score ?? 100 * hitPoints,
+      score: options.score ?? scoreForHealth(hitPoints),
       variant: options.variant ?? 'normal',
     }));
   }

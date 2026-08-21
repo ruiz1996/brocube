@@ -1,3 +1,5 @@
+import { GAME } from '../config.js';
+
 function reflectBall(ball, normal) {
   const dot = ball.velocityX * normal.nx + ball.velocityY * normal.ny;
   if (dot >= 0) return false;
@@ -83,7 +85,14 @@ export function createDefaultBallBehaviors() {
     for (let index = 0; index < count; index += 1) {
       const progress = count === 1 ? .5 : index / (count - 1);
       const angle = baseAngle - spread / 2 + spread * progress;
-      const derived = scene.ballFactory.createDerived({ x: ball.x, y: ball.y, angle, speed });
+      const derived = scene.ballFactory.createDerived({
+        x: ball.x,
+        y: ball.y,
+        angle,
+        speed,
+        lives: scene.upgrades.newBallLives,
+        damage: GAME.combat.baseDamage + scene.upgrades.ballDamageBonus,
+      });
       scene.world.add(derived);
       created.push(derived);
     }
@@ -95,7 +104,7 @@ export function createDefaultBallBehaviors() {
 
   registry.registerPeriodicEffect('area-blast', ({ scene, combat, ball, effectConfig }) => {
     const radius = Math.max(1, effectConfig.radius ?? 120);
-    const damage = Math.max(0, effectConfig.damage ?? 1);
+    const damage = Math.max(0, effectConfig.damage ?? GAME.combat.baseDamage);
     const hitBricks = [];
     for (const brick of scene.world.all('brick')) {
       const centerX = brick.x + brick.width / 2;
@@ -125,7 +134,7 @@ export function createDefaultBallBehaviors() {
   });
 
   registry.registerDamageEffect('chain-lightning', ({ scene, combat, ball, brick, effectConfig }) => {
-    const damage = Math.max(0, effectConfig.damage ?? 1);
+    const damage = Math.max(0, effectConfig.damage ?? GAME.combat.baseDamage);
     const additionalTargets = Math.max(0, Math.round(effectConfig.additionalTargets ?? 1));
     const range = Math.max(1, effectConfig.range ?? 160);
     const targets = [brick];
