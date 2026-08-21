@@ -25,6 +25,7 @@ import {
 } from '../src/game/balls/BallDefinitionRegistry.js';
 import { BallFactory } from '../src/game/balls/BallFactory.js';
 import { getOrbiterTrail } from '../src/game/balls/Orbiter.js';
+import { getBallLevelVisual } from '../src/game/balls/BallRendererRegistry.js';
 import { createDefaultBallEmitters } from '../src/game/emitters/BallEmitterRegistry.js';
 
 test('EventBus 支持 once 和主动解绑', () => {
@@ -373,6 +374,7 @@ test('主球与衍生球独立升级，特殊球同步获得各自的等级能�
 
   killBrick(primary);
   assert.equal(primary.level, 2);
+  assert.equal(primary.levelUpAt, primary.age);
   assert.equal(primary.damage, GAME.combat.baseDamage + GAME.ball.levelDamageBonus);
   assert.equal(primary.lives, GAME.ball.defaultLives + GAME.ball.levelLivesBonus);
 
@@ -548,6 +550,22 @@ test('战斗数值统一放大十倍，球默认具备等级和生命属性', ()
   assert.equal(GAME.upgrade.blastDamage, 10);
   assert.equal(basic.level, GAME.ball.defaultLevel);
   assert.equal(basic.lives, GAME.ball.defaultLives);
+});
+
+test('不同球等级使用轻量且明确区分的外观层级', () => {
+  assert.equal(getBallLevelVisual(1), null);
+  assert.deepEqual(getBallLevelVisual(2), {
+    color: '#65f6ff',
+    ringCount: 1,
+    nodeCount: 2,
+    rotationSpeed: 2.6,
+  });
+  assert.deepEqual(getBallLevelVisual(3), {
+    color: '#ffd166',
+    ringCount: 2,
+    nodeCount: 3,
+    rotationSpeed: 3.8,
+  });
 });
 
 test('发射器可独立切换挡板发射和顶部发射', () => {

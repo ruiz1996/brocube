@@ -81,6 +81,7 @@ export class BallCombatSystem {
     ) {
       const previousLevel = ball.level;
       ball.level += 1;
+      ball.levelUpAt = ball.age ?? 0;
       if (ball.contactDamage !== false) ball.damage += GAME.ball.levelDamageBonus;
       ball.lives += GAME.ball.levelLivesBonus;
       const skillBonuses = this.#applySkillLevelBonus(ball);

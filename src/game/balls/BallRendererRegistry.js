@@ -1,5 +1,67 @@
 import { getOrbiterPosition, getOrbiterTrail } from './Orbiter.js';
 
+const TAU = Math.PI * 2;
+
+export function getBallLevelVisual(level) {
+  if (level >= 3) {
+    return { color: '#ffd166', ringCount: 2, nodeCount: 3, rotationSpeed: 3.8 };
+  }
+  if (level >= 2) {
+    return { color: '#65f6ff', ringCount: 1, nodeCount: 2, rotationSpeed: 2.6 };
+  }
+  return null;
+}
+
+function renderLevelAura(ctx, ball) {
+  const profile = getBallLevelVisual(ball.level);
+  if (!profile) return;
+  const age = ball.age ?? 0;
+  const rotation = age * profile.rotationSpeed;
+  const outerRadius = ball.radius * (ball.level >= 3 ? 2.05 : 1.75);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.strokeStyle = profile.color;
+  ctx.fillStyle = profile.color;
+  ctx.shadowColor = profile.color;
+  ctx.shadowBlur = ball.level >= 3 ? 10 : 6;
+  ctx.lineWidth = ball.level >= 3 ? 1.35 : 1;
+
+  for (let index = 0; index < profile.ringCount; index += 1) {
+    const radius = outerRadius + index * ball.radius * .5;
+    const start = rotation * (index % 2 === 0 ? 1 : -.8) + index * Math.PI;
+    ctx.globalAlpha = index === 0 ? .72 : .46;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, radius, start, start + Math.PI * 1.35);
+    ctx.stroke();
+  }
+
+  ctx.globalAlpha = ball.level >= 3 ? .92 : .7;
+  for (let index = 0; index < profile.nodeCount; index += 1) {
+    const angle = rotation + index * TAU / profile.nodeCount;
+    ctx.beginPath();
+    ctx.arc(
+      ball.x + Math.cos(angle) * outerRadius,
+      ball.y + Math.sin(angle) * outerRadius,
+      Math.max(1.2, ball.radius * .24),
+      0,
+      TAU,
+    );
+    ctx.fill();
+  }
+
+  const levelUpElapsed = age - (ball.levelUpAt ?? -Infinity);
+  if (levelUpElapsed >= 0 && levelUpElapsed < .65) {
+    const progress = levelUpElapsed / .65;
+    ctx.globalAlpha = 1 - progress;
+    ctx.lineWidth = 2.4 * (1 - progress) + .6;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.radius * (1.8 + progress * 4.5), 0, TAU);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 export class BallRendererRegistry {
   constructor() { this.renderers = new Map(); }
 
@@ -12,6 +74,7 @@ export class BallRendererRegistry {
   render(ctx, ball) {
     const renderer = this.renderers.get(ball.visual.renderer) ?? this.renderers.get('orb');
     renderer(ctx, ball);
+    renderLevelAura(ctx, ball);
   }
 }
 

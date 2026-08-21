@@ -88,6 +88,7 @@ export class Ball extends Entity {
       brickContacts: new Set(),
       attached: false,
       age: 0,
+      levelUpAt: -Infinity,
       trail: [],
     });
   }
