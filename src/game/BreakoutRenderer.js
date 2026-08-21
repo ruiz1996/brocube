@@ -9,6 +9,7 @@ export class BreakoutRenderer {
     for (const brick of world.all('brick')) this.#brick(ctx, brick);
     for (const wave of world.all('blast-wave')) this.#blastWave(ctx, wave);
     for (const arc of world.all('lightning-arc')) this.#lightningArc(ctx, arc);
+    for (const strike of world.all('lightning-strike')) this.#lightningStrike(ctx, strike);
     for (const particle of world.all('particle')) this.#particle(ctx, particle);
     for (const paddle of world.all('paddle')) this.#paddle(ctx, paddle);
     for (const ball of world.all('ball')) this.#ball(ctx, ball);
@@ -234,6 +235,33 @@ export class BreakoutRenderer {
       }
       ctx.stroke();
     }
+    ctx.restore();
+  }
+
+  #lightningStrike(ctx, strike) {
+    const alpha = Math.max(0, strike.life / strike.maxLife);
+    const top = Math.max(GAME.playTop, strike.y - 150);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.lineCap = 'round';
+    ctx.shadowColor = '#71dfff';
+    ctx.shadowBlur = 20;
+    for (let pass = 0; pass < 2; pass += 1) {
+      ctx.strokeStyle = pass === 0 ? '#4aa8ff' : '#f4ffff';
+      ctx.lineWidth = pass === 0 ? 7 : 2;
+      ctx.beginPath();
+      ctx.moveTo(strike.x - 8, top);
+      ctx.lineTo(strike.x + 9, top + 34);
+      ctx.lineTo(strike.x - 11, top + 68);
+      ctx.lineTo(strike.x + 7, top + 102);
+      ctx.lineTo(strike.x, strike.y);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = strike.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(strike.x, strike.y, 10 + (1 - alpha) * 22, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore();
   }
 

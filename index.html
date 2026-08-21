@@ -15,6 +15,9 @@
           <span>NEON <b>BREAKER</b></span>
         </a>
         <div class="header-actions">
+          <button id="upgrade-library-button" class="icon-button" type="button" aria-label="查看强化图鉴与自动升级设置" aria-expanded="false">
+            <span aria-hidden="true">▦</span>
+          </button>
           <button id="sound-button" class="icon-button" type="button" aria-label="开关音效" aria-pressed="false">
             <span aria-hidden="true">◖))</span>
           </button>
@@ -75,6 +78,17 @@
             <h2>选择一项强化</h2>
             <p class="upgrade-copy">强化可以重复选择，效果会持续叠加。</p>
             <div id="upgrade-options" class="upgrade-options"></div>
+          </div>
+          <div id="upgrade-library" class="upgrade-library is-hidden" aria-hidden="true">
+            <div class="upgrade-library-header">
+              <div>
+                <p class="overlay-kicker">UPGRADE DATABASE</p>
+                <h2>强化卡牌与自动升级</h2>
+                <p class="upgrade-library-copy">勾选后，只有当该卡片进入本次随机三选一时才会自动选择；未命中仍会正常暂停。</p>
+              </div>
+              <button id="upgrade-library-close" class="icon-button" type="button" aria-label="关闭强化图鉴">×</button>
+            </div>
+            <div id="upgrade-library-list" class="upgrade-library-list"></div>
           </div>
         </div>
 

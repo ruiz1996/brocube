@@ -227,7 +227,7 @@ test('球触底扣除一点生命，生命耗尽后才消失', () => {
   scene.exit();
 });
 
-test('生命增幅只强化新生成的球，最多可选择三级', () => {
+test('生命增幅只强化新生成的球，最多可选择两级', () => {
   const events = new EventBus();
   const launches = [];
   events.on('ball:launched', ({ ball }) => launches.push(ball));
@@ -735,7 +735,7 @@ test('五连速射概率可强化三级，触发后按短间隔共发射五颗�
   scene.exit();
 });
 
-test('双重挡板创建半宽同步副挡板，并参与球反弹', () => {
+test('双重挡板分三级扩展副挡板，并参与球反弹', () => {
   const events = new EventBus();
   const input = { pointer: { active: false, x: 0, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
   const scene = new BreakoutScene();
@@ -753,9 +753,9 @@ test('双重挡板创建半宽同步副挡板，并参与球反弹', () => {
   const primary = scene.world.all('paddle').find(({ role }) => role === 'primary');
   const secondary = scene.world.all('paddle').find(({ role }) => role === 'secondary');
   assert.ok(secondary);
-  assert.equal(secondary.width, primary.width * GAME.upgrade.doublePaddleWidthRatio);
+  assert.equal(secondary.width, primary.width * GAME.upgrade.doublePaddleWidthRatioPerLevel);
   assert.equal(primary.y - secondary.y, GAME.upgrade.doublePaddleVerticalOffset);
-  assert.equal(scene.upgrades.isAvailable('doublePaddle'), false);
+  assert.equal(scene.upgrades.isAvailable('doublePaddle'), true);
 
   input.pointer.active = true;
   input.pointer.x = 430;
@@ -1556,7 +1556,10 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
   for (let level = 0; level < GAME.upgrade.ballLivesMaxLevel; level += 1) {
     chooseDirectly('ballLives');
   }
-  assert.equal(scene.upgrades.newBallLives, 4);
+  assert.equal(
+    scene.upgrades.newBallLives,
+    GAME.ball.defaultLives + GAME.upgrade.ballLivesPerLevel * GAME.upgrade.ballLivesMaxLevel,
+  );
   assert.equal(scene.upgrades.isAvailable('ballLives'), false);
 
   for (let level = 0; level < GAME.upgrade.rapidFireMaxLevel; level += 1) {
@@ -1580,7 +1583,9 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
   for (let level = 0; level < GAME.upgrade.rapidVolleyMaxLevel; level += 1) {
     chooseDirectly('rapidVolley');
   }
-  chooseDirectly('doublePaddle');
+  for (let level = 0; level < GAME.upgrade.doublePaddleMaxLevel; level += 1) {
+    chooseDirectly('doublePaddle');
+  }
   chooseDirectly('microNavigation');
   for (let level = 0; level < GAME.upgrade.navigationStrengthMaxLevel; level += 1) {
     chooseDirectly('navigationStrength');
@@ -1624,6 +1629,191 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
   scene.update(1 / 120);
   assert.equal(ball.active, true);
   assert.ok(ball.velocityY < 0);
+  scene.exit();
+});
+
+test('强化图鉴可预选自动升级，命中随机三选一时不暂停并自动完成选择', () => {
+  const events = new EventBus();
+  const scene = new BreakoutScene();
+  const offered = [];
+  const selected = [];
+  events.on('upgrade:offered', (payload) => offered.push(payload));
+  events.on('upgrade:selected', (payload) => selected.push(payload));
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  assert.equal(scene.upgrades.catalogState().length, 25);
+  assert.equal(scene.upgrades.setAutoUpgrade('rapidFire', true), true);
+  scene.upgrades.options = () => scene.upgrades.catalog().filter(({ id }) => (
+    ['rapidFire', 'paddleLength', 'bottomBounce'].includes(id)
+  ));
+  scene.upgrades.check(scene.upgrades.nextScore);
+  assert.equal(scene.upgrades.levels.rapidFire, 1);
+  assert.equal(scene.state, 'playing');
+  assert.equal(offered.length, 0);
+  assert.equal(selected.at(-1).automatic, true);
+
+  scene.upgrades.options = () => scene.upgrades.catalog().filter(({ id }) => (
+    ['paddleLength', 'bottomBounce', 'rapidVolley'].includes(id)
+  ));
+  scene.upgrades.check(scene.upgrades.nextScore);
+  assert.equal(scene.state, 'upgrading');
+  assert.equal(offered.length, 1);
+  scene.exit();
+});
+
+test('分裂发射十级后解锁二连发，两颗球分别从完整特殊球池抽取', () => {
+  const events = new EventBus();
+  const launches = [];
+  events.on('ball:launched', (payload) => launches.push(payload));
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  const chooseDirectly = (id) => {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+    assert.equal(scene.chooseUpgrade(id), true);
+  };
+
+  assert.equal(scene.upgrades.isAvailable('doubleShot'), false);
+  for (let level = 0; level < GAME.upgrade.multiShotMaxLevel; level += 1) chooseDirectly('multiShot');
+  assert.equal(scene.upgrades.isAvailable('multiShot'), false);
+  assert.equal(scene.upgrades.isAvailable('doubleShot'), true);
+  chooseDirectly('doubleShot');
+  chooseDirectly('topLaunch');
+
+  scene.autoFire.random = () => .99;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  assert.equal(launches.length, 2);
+  assert.ok(launches.every(({ source }) => source === 'top-launch'));
+  assert.ok(launches.every(({ ball }) => Math.hypot(ball.velocityX, ball.velocityY) === GAME.ball.speed * GAME.upgrade.topLaunchSpeedMultiplier));
+  scene.exit();
+});
+
+test('新增特殊球衍生强化会作用于现有球和未来发射配置', () => {
+  const events = new EventBus();
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  const chooseDirectly = (id) => {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+    assert.equal(scene.chooseUpgrade(id), true);
+  };
+
+  chooseDirectly('topLaunch');
+  chooseDirectly('topImpact');
+  scene.autoFire.random = () => .99;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const topBall = scene.world.all('ball').find(({ launchSource }) => launchSource === 'top-launch');
+  assert.equal(
+    topBall.damage,
+    GAME.combat.baseDamage * scene.upgrades.topImpactDamageMultiplier,
+  );
+
+  chooseDirectly('voidOrbit');
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const voidBall = scene.world.all('ball').find(({ definitionId }) => definitionId === VOID_ORBIT_BALL_ID);
+  const originalRadius = voidBall.orbiters[0].orbitRadius;
+  chooseDirectly('voidOrbitRadius');
+  assert.ok(voidBall.orbiters.every(({ orbitRadius }) => orbitRadius > originalRadius));
+  assert.equal(voidBall.orbiters[0].orbitRadius, scene.upgrades.voidOrbitRadius);
+  scene.exit();
+});
+
+test('爆裂碰撞、导航回马枪和雷霆追击均执行独立判定与效果', () => {
+  const events = new EventBus();
+  const explosions = [];
+  const returns = [];
+  const strikes = [];
+  events.on('ball:exploded', (payload) => explosions.push(payload));
+  events.on('ball:navigation-return', (payload) => returns.push(payload));
+  events.on('ball:lightning-strike', (payload) => strikes.push(payload));
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  const chooseDirectly = (id) => {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+    assert.equal(scene.chooseUpgrade(id), true);
+  };
+
+  chooseDirectly('blastLaunch');
+  chooseDirectly('blastImpact');
+  scene.autoFire.random = () => .99;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const blastBall = scene.world.all('ball').find(({ launchSource }) => launchSource === 'blast-launch');
+  const blastTarget = scene.world.all('brick')[0];
+  blastTarget.hitPoints = 1000;
+  scene.ballBehaviors.random = () => 0;
+  scene.ballCombat.resolveBrickCollision({
+    ball: blastBall,
+    brick: blastTarget,
+    normal: { nx: 0, ny: 1, depth: 0 },
+  });
+  assert.equal(explosions.at(-1).cause, 'impact-explosion');
+
+  chooseDirectly('microNavigation');
+  chooseDirectly('navigationReturn');
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const navigationBall = scene.world.all('ball').find(({ definitionId }) => definitionId === MICRO_NAVIGATION_BALL_ID);
+  navigationBall.x = blastTarget.x - 40;
+  navigationBall.y = blastTarget.y + blastTarget.height / 2;
+  navigationBall.velocityX = -Math.abs(navigationBall.velocityX || navigationBall.speed);
+  navigationBall.velocityY = 0;
+  scene.guidance.random = () => 0;
+  events.emit('ball:bounce', { ball: navigationBall, brick: blastTarget, surface: 'brick' });
+  scene.guidance.update(GAME.upgrade.navigationReturnDelay + .01);
+  assert.equal(returns.length, 1);
+  assert.ok(navigationBall.velocityX > 0);
+
+  chooseDirectly('lightning');
+  chooseDirectly('lightningStrike');
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const lightningBall = scene.world.all('ball').find(({ definitionId }) => definitionId === LIGHTNING_BALL_ID);
+  const lightningTarget = scene.world.all('brick').find(({ active }) => active);
+  lightningTarget.hitPoints = 1000;
+  scene.ballCombat.resolveBrickCollision({
+    ball: lightningBall,
+    brick: lightningTarget,
+    normal: { nx: 0, ny: 1, depth: 0 },
+  });
+  scene.world.flush();
+  assert.ok(strikes.length >= 1);
+  assert.ok(scene.world.all('lightning-strike').length >= 1);
   scene.exit();
 });
 

@@ -32,6 +32,11 @@ export class GameUI {
     this.comboMultiplier = document.querySelector('#combo-multiplier');
     this.pauseButton = document.querySelector('#pause-button');
     this.soundButton = document.querySelector('#sound-button');
+    this.upgradeLibraryButton = document.querySelector('#upgrade-library-button');
+    this.upgradeLibrary = document.querySelector('#upgrade-library');
+    this.upgradeLibraryClose = document.querySelector('#upgrade-library-close');
+    this.upgradeLibraryList = document.querySelector('#upgrade-library-list');
+    this.resumeAfterLibrary = false;
     this.#bind();
     this.updateStats(scene.snapshot());
   }
@@ -49,6 +54,17 @@ export class GameUI {
     this.soundButton.addEventListener('click', () => {
       this.audio.setEnabled(!this.audio.enabled);
       this.soundButton.setAttribute('aria-pressed', String(this.audio.enabled));
+    });
+    this.upgradeLibraryButton.addEventListener('click', () => this.#showUpgradeLibrary());
+    this.upgradeLibraryClose.addEventListener('click', () => this.#hideUpgradeLibrary());
+    this.upgradeLibrary.addEventListener('click', (event) => {
+      if (event.target === this.upgradeLibrary) this.#hideUpgradeLibrary();
+    });
+    this.upgradeLibraryList.addEventListener('change', (event) => {
+      const checkbox = event.target.closest('[data-auto-upgrade-id]');
+      if (!checkbox) return;
+      this.scene.upgrades.setAutoUpgrade(checkbox.dataset.autoUpgradeId, checkbox.checked);
+      this.#renderUpgradeLibrary();
     });
     this.upgradeOptions.addEventListener('click', (event) => {
       const option = event.target.closest('[data-upgrade-id]');
@@ -72,6 +88,10 @@ export class GameUI {
     events.on('upgrade:selected', ({ pendingChoices }) => {
       this.audio.play(520, .12, .035);
       if (pendingChoices === 0) this.#hideUpgrades();
+      if (!this.upgradeLibrary.classList.contains('is-hidden')) this.#renderUpgradeLibrary();
+    });
+    events.on('upgrade:auto-changed', () => {
+      if (!this.upgradeLibrary.classList.contains('is-hidden')) this.#renderUpgradeLibrary();
     });
     events.on('combo:changed', (combo) => this.#updateCombo(combo));
     events.on('combo:ended', () => this.#hideCombo());
@@ -121,6 +141,49 @@ export class GameUI {
   #hideUpgrades() {
     this.upgradeOverlay.classList.add('is-hidden');
     this.upgradeOverlay.setAttribute('aria-hidden', 'true');
+  }
+
+  #showUpgradeLibrary() {
+    this.resumeAfterLibrary = this.scene.state === 'playing' && !this.engine.paused;
+    if (this.resumeAfterLibrary) this.engine.setPaused(true);
+    this.#renderUpgradeLibrary();
+    this.upgradeLibrary.classList.remove('is-hidden');
+    this.upgradeLibrary.setAttribute('aria-hidden', 'false');
+    this.upgradeLibraryButton.setAttribute('aria-expanded', 'true');
+  }
+
+  #hideUpgradeLibrary() {
+    this.upgradeLibrary.classList.add('is-hidden');
+    this.upgradeLibrary.setAttribute('aria-hidden', 'true');
+    this.upgradeLibraryButton.setAttribute('aria-expanded', 'false');
+    if (this.resumeAfterLibrary && this.scene.state === 'playing') this.engine.setPaused(false);
+    this.resumeAfterLibrary = false;
+  }
+
+  #renderUpgradeLibrary() {
+    const cards = this.scene.upgrades.catalogState();
+    this.upgradeLibraryList.innerHTML = cards.map((card) => {
+      const maximum = Number.isFinite(card.maxLevel) ? card.maxLevel : '∞';
+      const status = card.capped
+        ? '已满级'
+        : card.prerequisiteMet ? '可进入随机池' : (card.prerequisiteText ?? '需要先解锁前置强化');
+      return `
+        <label class="upgrade-library-card${card.capped ? ' is-capped' : ''}${card.prerequisiteMet ? '' : ' is-locked'}">
+          <span class="upgrade-library-card-head">
+            <span class="upgrade-name">${card.name}</span>
+            <span class="upgrade-level">LV.${card.level} / ${maximum}</span>
+          </span>
+          <span class="upgrade-description">${card.description}</span>
+          <span class="upgrade-library-card-foot">
+            <span class="upgrade-library-status">${status}</span>
+            <span class="auto-upgrade-toggle">
+              <input type="checkbox" data-auto-upgrade-id="${card.id}" ${card.autoSelected ? 'checked' : ''}>
+              <span>自动升级</span>
+            </span>
+          </span>
+        </label>
+      `;
+    }).join('');
   }
 
   #updateCombo({ count, multiplier, windowSeconds }) {

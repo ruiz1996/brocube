@@ -9,18 +9,24 @@ import {
 const UPGRADE_IDS = [
   'rapidFire',
   'multiShot',
+  'doubleShot',
   'rapidVolley',
   'doublePaddle',
   'topLaunch',
   'topRecovery',
+  'topImpact',
   'blastLaunch',
   'blastCooldown',
+  'blastImpact',
   'voidOrbit',
   'voidOrbitSpeed',
+  'voidOrbitRadius',
   'microNavigation',
   'navigationStrength',
+  'navigationReturn',
   'lightning',
   'lightningJumps',
+  'lightningStrike',
   'ballSpeed',
   'ballDamage',
   'ballLives',
@@ -29,27 +35,41 @@ const UPGRADE_IDS = [
 ];
 
 const UPGRADE_PREREQUISITES = {
+  doubleShot: { id: 'multiShot', level: 10 },
   topRecovery: 'topLaunch',
+  topImpact: 'topLaunch',
   blastCooldown: 'blastLaunch',
+  blastImpact: 'blastLaunch',
   voidOrbitSpeed: 'voidOrbit',
+  voidOrbitRadius: 'voidOrbit',
   navigationStrength: 'microNavigation',
+  navigationReturn: 'microNavigation',
   lightningJumps: 'lightning',
+  lightningStrike: 'lightning',
 };
 
 const UPGRADE_MAX_LEVEL_KEYS = {
   rapidFire: 'rapidFireMaxLevel',
+  multiShot: 'multiShotMaxLevel',
+  doubleShot: 'doubleShotMaxLevel',
   topLaunch: 'topLaunchMaxLevel',
   topRecovery: 'topRecoveryMaxLevel',
+  topImpact: 'topImpactMaxLevel',
   blastLaunch: 'blastLaunchMaxLevel',
   blastCooldown: 'blastCooldownMaxLevel',
+  blastImpact: 'blastImpactMaxLevel',
   voidOrbit: 'voidOrbitMaxLevel',
   voidOrbitSpeed: 'voidOrbiterSpeedMaxLevel',
+  voidOrbitRadius: 'voidOrbitRadiusMaxLevel',
   rapidVolley: 'rapidVolleyMaxLevel',
   doublePaddle: 'doublePaddleMaxLevel',
   microNavigation: 'microNavigationMaxLevel',
   navigationStrength: 'navigationStrengthMaxLevel',
+  navigationReturn: 'navigationReturnMaxLevel',
   lightning: 'lightningMaxLevel',
   lightningJumps: 'lightningJumpsMaxLevel',
+  lightningStrike: 'lightningStrikeMaxLevel',
+  ballSpeed: 'ballSpeedMaxLevel',
   ballDamage: 'ballDamageMaxLevel',
   ballLives: 'ballLivesMaxLevel',
   paddleLength: 'paddleLengthMaxLevel',
@@ -76,21 +96,28 @@ export class UpgradeSystem {
   }
 
   reset() {
+    this.autoUpgradeIds ??= new Set();
     this.levels = {
       rapidFire: 0,
       multiShot: 0,
+      doubleShot: 0,
       rapidVolley: 0,
       doublePaddle: 0,
       topLaunch: 0,
       topRecovery: 0,
+      topImpact: 0,
       blastLaunch: 0,
       blastCooldown: 0,
+      blastImpact: 0,
       voidOrbit: 0,
       voidOrbitSpeed: 0,
+      voidOrbitRadius: 0,
       microNavigation: 0,
       navigationStrength: 0,
+      navigationReturn: 0,
       lightning: 0,
       lightningJumps: 0,
+      lightningStrike: 0,
       ballSpeed: 0,
       ballDamage: 0,
       ballLives: 0,
@@ -126,6 +153,11 @@ export class UpgradeSystem {
     return GAME.upgrade.ballDamagePerLevel * this.levels.ballDamage;
   }
 
+  get topImpactDamageMultiplier() {
+    return 1 + (GAME.upgrade.topLaunchSpeedMultiplier - 1)
+      * GAME.upgrade.topImpactDamageScalePerLevel * this.levels.topImpact;
+  }
+
   get newBallLives() {
     return GAME.ball.defaultLives
       + GAME.upgrade.ballLivesPerLevel * this.levels.ballLives;
@@ -136,14 +168,40 @@ export class UpgradeSystem {
       * GAME.upgrade.voidOrbiterSpeedMultiplierPerLevel ** this.levels.voidOrbitSpeed;
   }
 
+  get voidOrbitRadius() {
+    return GAME.upgrade.voidOrbitRadius
+      * GAME.upgrade.voidOrbitRadiusMultiplierPerLevel ** this.levels.voidOrbitRadius;
+  }
+
   get navigationStrength() {
     return GAME.upgrade.navigationStrength
       * GAME.upgrade.navigationStrengthMultiplierPerLevel ** this.levels.navigationStrength;
   }
 
+  get navigationReturnChance() {
+    return Math.min(
+      1,
+      GAME.upgrade.navigationReturnChancePerLevel * this.levels.navigationReturn,
+    );
+  }
+
   get lightningAdditionalTargets() {
     return GAME.upgrade.lightningAdditionalTargets
       + GAME.upgrade.lightningAdditionalTargetsPerLevel * this.levels.lightningJumps;
+  }
+
+  get lightningStrikeChance() {
+    return Math.min(
+      1,
+      GAME.upgrade.lightningStrikeChancePerLevel * this.levels.lightningStrike,
+    );
+  }
+
+  get blastImpactChance() {
+    return Math.min(
+      1,
+      GAME.upgrade.blastImpactChancePerLevel * this.levels.blastImpact,
+    );
   }
 
   get blastInterval() {
@@ -184,12 +242,26 @@ export class UpgradeSystem {
   isAvailable(id) {
     if (!UPGRADE_IDS.includes(id)) return false;
     const prerequisite = UPGRADE_PREREQUISITES[id];
-    if (prerequisite && this.levels[prerequisite] === 0) return false;
+    if (typeof prerequisite === 'string' && this.levels[prerequisite] === 0) return false;
+    if (prerequisite && typeof prerequisite === 'object'
+      && this.levels[prerequisite.id] < prerequisite.level) return false;
     const maxLevelKey = UPGRADE_MAX_LEVEL_KEYS[id];
     return !maxLevelKey || this.levels[id] < GAME.upgrade[maxLevelKey];
   }
 
-  choose(id) {
+  setAutoUpgrade(id, enabled) {
+    if (!UPGRADE_IDS.includes(id)) return false;
+    if (enabled) this.autoUpgradeIds.add(id);
+    else this.autoUpgradeIds.delete(id);
+    this.scene.events.emit('upgrade:auto-changed', {
+      id,
+      enabled: this.autoUpgradeIds.has(id),
+      autoUpgradeIds: [...this.autoUpgradeIds],
+    });
+    return true;
+  }
+
+  choose(id, { automatic = false } = {}) {
     if (!this.waitingForChoice || !this.isAvailable(id)) return false;
     this.levels[id] += 1;
     this.pendingChoices -= 1;
@@ -219,13 +291,23 @@ export class UpgradeSystem {
       const paddles = this.scene.world.all('paddle');
       const paddle = paddles.find(({ role }) => role === 'primary');
       if (paddle && !paddles.some(({ role }) => role === 'secondary')) {
-        const width = paddle.width * GAME.upgrade.doublePaddleWidthRatio;
+        const width = paddle.width * Math.min(
+          1,
+          GAME.upgrade.doublePaddleWidthRatioPerLevel * this.levels.doublePaddle,
+        );
         this.scene.world.add(new Paddle({
           role: 'secondary',
           x: paddle.x + paddle.width / 2 - width / 2,
           y: paddle.y - GAME.upgrade.doublePaddleVerticalOffset,
           width,
         }));
+      }
+    } else if (id === 'topImpact') {
+      const previousMultiplier = 1 + (GAME.upgrade.topLaunchSpeedMultiplier - 1)
+        * GAME.upgrade.topImpactDamageScalePerLevel * (this.levels.topImpact - 1);
+      const ratio = this.topImpactDamageMultiplier / previousMultiplier;
+      for (const ball of this.scene.world.all('ball')) {
+        if (ball.launchSource === 'top-launch' && ball.contactDamage !== false) ball.damage *= ratio;
       }
     } else if (id === 'blastCooldown') {
       for (const ball of this.scene.world.all('ball')) {
@@ -235,6 +317,21 @@ export class UpgradeSystem {
           effect.timeRemaining = Math.min(effect.timeRemaining, effect.interval);
         }
       }
+    } else if (id === 'blastImpact') {
+      for (const ball of this.scene.world.all('ball')) {
+        if (ball.launchSource !== 'blast-launch') continue;
+        let impact = ball.damageEffects.find(({ id: effectId }) => effectId === 'impact-blast');
+        if (!impact) {
+          impact = { id: 'impact-blast', config: {} };
+          ball.damageEffects.push(impact);
+        }
+        const blast = ball.periodicEffects.find(({ id: effectId }) => effectId === 'area-blast');
+        Object.assign(impact.config, {
+          chance: this.blastImpactChance,
+          damage: blast?.config.damage ?? GAME.upgrade.blastDamage,
+          radius: blast?.config.radius ?? GAME.upgrade.blastRadius,
+        });
+      }
     } else if (id === 'voidOrbitSpeed') {
       for (const ball of this.scene.world.all('ball')) {
         if (ball.definitionId !== VOID_ORBIT_BALL_ID) continue;
@@ -242,10 +339,21 @@ export class UpgradeSystem {
           orbiter.angularSpeed = this.voidOrbiterAngularSpeed;
         }
       }
+    } else if (id === 'voidOrbitRadius') {
+      for (const ball of this.scene.world.all('ball')) {
+        if (ball.definitionId !== VOID_ORBIT_BALL_ID) continue;
+        for (const orbiter of ball.orbiters) orbiter.orbitRadius = this.voidOrbitRadius;
+      }
     } else if (id === 'navigationStrength') {
       for (const ball of this.scene.world.all('ball')) {
         if (ball.definitionId === MICRO_NAVIGATION_BALL_ID && ball.guidance) {
           ball.guidance.strength = this.navigationStrength;
+        }
+      }
+    } else if (id === 'navigationReturn') {
+      for (const ball of this.scene.world.all('ball')) {
+        if (ball.definitionId === MICRO_NAVIGATION_BALL_ID && ball.guidance) {
+          ball.guidance.returnStrikeChance = this.navigationReturnChance;
         }
       }
     } else if (id === 'lightningJumps') {
@@ -257,10 +365,17 @@ export class UpgradeSystem {
             + (ball.level - 1) * GAME.ball.levelLightningTargetBonus;
         }
       }
+    } else if (id === 'lightningStrike') {
+      for (const ball of this.scene.world.all('ball')) {
+        if (ball.definitionId !== LIGHTNING_BALL_ID) continue;
+        const effect = ball.damageEffects.find(({ id: effectId }) => effectId === 'chain-lightning');
+        if (effect) effect.config.strikeChance = this.lightningStrikeChance;
+      }
     }
 
     this.scene.events.emit('upgrade:selected', {
       id,
+      automatic,
       levels: { ...this.levels },
       pendingChoices: this.pendingChoices,
       nextScore: this.nextScore,
@@ -271,8 +386,8 @@ export class UpgradeSystem {
     return true;
   }
 
-  options() {
-    const candidates = [
+  catalog() {
+    return [
       {
         id: 'rapidFire',
         name: '高速装填',
@@ -284,7 +399,16 @@ export class UpgradeSystem {
         id: 'multiShot',
         name: '分裂发射',
         level: this.levels.multiShot,
+        maxLevel: GAME.upgrade.multiShotMaxLevel,
         description: `额外球概率 ${Math.round(this.extraBallChance * 100)}% → ${Math.round((1 - (1 - GAME.upgrade.extraBallChancePerLevel) ** (this.levels.multiShot + 1)) * 100)}%；额外球随机方向，主球保持竖直`,
+      },
+      {
+        id: 'doubleShot',
+        name: '二连发',
+        level: this.levels.doubleShot,
+        maxLevel: GAME.upgrade.doubleShotMaxLevel,
+        prerequisiteText: '需要分裂发射达到10级',
+        description: '每次发射必定独立抽取并发射两颗球，两颗球都有可能成为特殊球',
       },
       {
         id: 'rapidVolley',
@@ -298,12 +422,13 @@ export class UpgradeSystem {
         name: '双重挡板',
         level: this.levels.doublePaddle,
         maxLevel: GAME.upgrade.doublePaddleMaxLevel,
-        description: `在主挡板上方增加一块宽度为主挡板 ${Math.round(GAME.upgrade.doublePaddleWidthRatio * 100)}% 的同步挡板`,
+        description: `副挡板宽度增加主挡板的33%，当前 ${Math.round(GAME.upgrade.doublePaddleWidthRatioPerLevel * this.levels.doublePaddle * 100)}% → ${Math.round(Math.min(1, GAME.upgrade.doublePaddleWidthRatioPerLevel * (this.levels.doublePaddle + 1)) * 100)}%`,
       },
       {
         id: 'ballSpeed',
         name: '动能超频',
         level: this.levels.ballSpeed,
+        maxLevel: GAME.upgrade.ballSpeedMaxLevel,
         description: `所有球速度提升 ${Math.round((GAME.upgrade.ballSpeedMultiplierPerLevel - 1) * 100)}%`,
       },
       {
@@ -328,6 +453,14 @@ export class UpgradeSystem {
         description: `加入特殊球池：与普通球等概率互相替代，并从顶部发射一颗 ${Math.round(GAME.upgrade.topLaunchSpeedMultiplier * 100)}% 速度球`,
       },
       {
+        id: 'topImpact',
+        name: '天顶冲击',
+        level: this.levels.topImpact,
+        maxLevel: GAME.upgrade.topImpactMaxLevel,
+        prerequisiteText: '需要先解锁天顶增援',
+        description: `将高速动能转化为碰撞伤害，伤害倍率 ${this.topImpactDamageMultiplier.toFixed(1)}× → ${(this.topImpactDamageMultiplier + (GAME.upgrade.topLaunchSpeedMultiplier - 1) * GAME.upgrade.topImpactDamageScalePerLevel).toFixed(1)}×`,
+      },
+      {
         id: 'blastLaunch',
         name: '爆裂核心',
         level: this.levels.blastLaunch,
@@ -340,6 +473,14 @@ export class UpgradeSystem {
         level: this.levels.blastCooldown,
         maxLevel: GAME.upgrade.blastCooldownMaxLevel,
         description: `爆炸间隔 ${this.blastInterval.toFixed(2)}s → ${Math.max(GAME.upgrade.blastMinimumInterval, this.blastInterval * GAME.upgrade.blastIntervalMultiplierPerLevel).toFixed(2)}s`,
+      },
+      {
+        id: 'blastImpact',
+        name: '爆裂触发',
+        level: this.levels.blastImpact,
+        maxLevel: GAME.upgrade.blastImpactMaxLevel,
+        prerequisiteText: '需要先解锁爆裂核心',
+        description: `碰撞方块时触发一次爆炸的概率 ${Math.round(this.blastImpactChance * 100)}% → ${Math.round(Math.min(1, this.blastImpactChance + GAME.upgrade.blastImpactChancePerLevel) * 100)}%`,
       },
       {
         id: 'voidOrbit',
@@ -356,6 +497,14 @@ export class UpgradeSystem {
         description: `双星公转速度 ${this.voidOrbiterAngularSpeed.toFixed(2)} → ${(this.voidOrbiterAngularSpeed * GAME.upgrade.voidOrbiterSpeedMultiplierPerLevel).toFixed(2)}（每级提升 ${Math.round((GAME.upgrade.voidOrbiterSpeedMultiplierPerLevel - 1) * 100)}%，最多 ${GAME.upgrade.voidOrbiterSpeedMaxLevel} 级）`,
       },
       {
+        id: 'voidOrbitRadius',
+        name: '虚空扩轨',
+        level: this.levels.voidOrbitRadius,
+        maxLevel: GAME.upgrade.voidOrbitRadiusMaxLevel,
+        prerequisiteText: '需要先解锁虚空双星',
+        description: `子球旋转半径 ${this.voidOrbitRadius.toFixed(0)} → ${(this.voidOrbitRadius * GAME.upgrade.voidOrbitRadiusMultiplierPerLevel).toFixed(0)}（每级扩大20%）`,
+      },
+      {
         id: 'microNavigation',
         name: '微导航',
         level: this.levels.microNavigation,
@@ -370,6 +519,14 @@ export class UpgradeSystem {
         description: `微导航转向力度提升 ${Math.round((GAME.upgrade.navigationStrengthMultiplierPerLevel - 1) * 100)}%（最多 ${GAME.upgrade.navigationStrengthMaxLevel} 级）`,
       },
       {
+        id: 'navigationReturn',
+        name: '导航回马枪',
+        level: this.levels.navigationReturn,
+        maxLevel: GAME.upgrade.navigationReturnMaxLevel,
+        prerequisiteText: '需要先解锁微导航',
+        description: `撞击后延迟反转并再次冲向原方块的基础概率 ${Math.round(this.navigationReturnChance * 100)}% → ${Math.round(Math.min(1, this.navigationReturnChance + GAME.upgrade.navigationReturnChancePerLevel) * 100)}%；连续触发概率递减`,
+      },
+      {
         id: 'lightning',
         name: '链式闪电',
         level: this.levels.lightning,
@@ -382,6 +539,14 @@ export class UpgradeSystem {
         level: this.levels.lightningJumps,
         maxLevel: GAME.upgrade.lightningJumpsMaxLevel,
         description: `额外弹射目标 ${this.lightningAdditionalTargets} → ${this.lightningAdditionalTargets + GAME.upgrade.lightningAdditionalTargetsPerLevel}（最多强化 ${GAME.upgrade.lightningJumpsMaxLevel} 次）`,
+      },
+      {
+        id: 'lightningStrike',
+        name: '雷霆追击',
+        level: this.levels.lightningStrike,
+        maxLevel: GAME.upgrade.lightningStrikeMaxLevel,
+        prerequisiteText: '需要先解锁链式闪电',
+        description: `每段闪电链额外落雷的概率 ${Math.round(this.lightningStrikeChance * 100)}% → ${Math.round(Math.min(1, this.lightningStrikeChance + GAME.upgrade.lightningStrikeChancePerLevel) * 100)}%`,
       },
       {
         id: 'topRecovery',
@@ -404,7 +569,35 @@ export class UpgradeSystem {
         maxLevel: GAME.upgrade.bottomBounceMaxLevel,
         description: `球触底时有 ${Math.round(this.bottomBounceChance * 100)}% → ${Math.round(Math.min(1, this.bottomBounceChance + GAME.upgrade.bottomBounceChancePerLevel) * 100)}% 概率反弹`,
       },
-    ].filter((option) => this.isAvailable(option.id));
+    ];
+  }
+
+  catalogState() {
+    const catalog = this.catalog();
+    const names = new Map(catalog.map(({ id, name }) => [id, name]));
+    return catalog.map((option) => {
+      const prerequisite = UPGRADE_PREREQUISITES[option.id];
+      const prerequisiteMet = !prerequisite || (
+        typeof prerequisite === 'string'
+          ? this.levels[prerequisite] > 0
+          : this.levels[prerequisite.id] >= prerequisite.level
+      );
+      const capped = Number.isFinite(option.maxLevel) && option.level >= option.maxLevel;
+      return {
+        ...option,
+        prerequisiteText: option.prerequisiteText ?? (prerequisite
+          ? `需要先解锁${names.get(typeof prerequisite === 'string' ? prerequisite : prerequisite.id)}`
+          : null),
+        prerequisiteMet,
+        capped,
+        available: this.isAvailable(option.id),
+        autoSelected: this.autoUpgradeIds.has(option.id),
+      };
+    });
+  }
+
+  options() {
+    const candidates = this.catalog().filter((option) => this.isAvailable(option.id));
 
     const lowPriorityIndex = candidates.findIndex(({ id }) => id === 'ballDamage');
     const lowPriorityOption = lowPriorityIndex >= 0
@@ -430,10 +623,30 @@ export class UpgradeSystem {
   }
 
   #offer() {
+    const options = this.options();
+    if (options.length === 0) {
+      this.pendingChoices = 0;
+      this.waitingForChoice = false;
+      this.scene.state = 'playing';
+      this.scene.events.emit('upgrade:pool-exhausted', {
+        levels: { ...this.levels },
+        nextScore: this.nextScore,
+      });
+      return;
+    }
+    const automaticOptions = options.filter(({ id }) => this.autoUpgradeIds.has(id));
+    if (automaticOptions.length > 0) {
+      const selected = automaticOptions[
+        Math.floor(this.random() * automaticOptions.length)
+      ];
+      this.waitingForChoice = true;
+      this.choose(selected.id, { automatic: true });
+      return;
+    }
     this.waitingForChoice = true;
     this.scene.state = 'upgrading';
     this.scene.events.emit('upgrade:offered', {
-      options: this.options(),
+      options,
       levels: { ...this.levels },
       pendingChoices: this.pendingChoices,
       nextScore: this.nextScore,

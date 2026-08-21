@@ -17,6 +17,7 @@ export class BallFactory {
     lives = GAME.ball.defaultLives,
     damageOverride,
     visualOverrides = {},
+    damageEffects = [],
     periodicEffects = [],
     orbitingDamageOverrides = {},
     guidanceOverrides = {},
@@ -36,6 +37,7 @@ export class BallFactory {
       lives,
       damageOverride,
       visualOverrides,
+      damageEffects: [...definition.damageEffects, ...damageEffects],
       periodicEffects: [...definition.periodicEffects, ...periodicEffects],
       orbitingDamageOverrides,
       guidanceOverrides,
@@ -90,6 +92,7 @@ export class BallFactory {
     lives,
     damageOverride,
     visualOverrides = {},
+    damageEffects = definition.damageEffects,
     periodicEffects = [],
     orbitingDamageOverrides = {},
     guidanceOverrides = {},
@@ -109,7 +112,7 @@ export class BallFactory {
       damage: damageOverride ?? definition.damage,
       damageType: definition.damageType,
       contactDamage: definition.contactDamage,
-      damageEffects: definition.damageEffects.map((effect) => ({
+      damageEffects: damageEffects.map((effect) => ({
         id: effect.id,
         config: { ...effect.config, ...(damageEffectConfigOverrides[effect.id] ?? {}) },
       })),

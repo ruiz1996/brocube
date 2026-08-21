@@ -24,7 +24,10 @@ export class PaddleSystem {
 
     for (const secondary of paddles) {
       if (secondary === paddle) continue;
-      secondary.width = paddle.width * GAME.upgrade.doublePaddleWidthRatio;
+      secondary.width = paddle.width * Math.min(
+        1,
+        GAME.upgrade.doublePaddleWidthRatioPerLevel * this.scene.upgrades.levels.doublePaddle,
+      );
       secondary.x = clamp(
         paddle.x + paddle.width / 2 - secondary.width / 2,
         14,

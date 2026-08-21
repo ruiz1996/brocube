@@ -12,6 +12,7 @@ function reflectBall(ball, normal) {
 
 export class BallBehaviorRegistry {
   constructor() {
+    this.random = Math.random;
     this.damageEffects = new Map();
     this.collisionPolicies = new Map();
     this.periodicEffects = new Map();
@@ -60,6 +61,38 @@ export class BallBehaviorRegistry {
 export function createDefaultBallBehaviors() {
   const registry = new BallBehaviorRegistry();
 
+  const explode = ({ scene, combat, ball, effectConfig, cause }) => {
+    const radius = Math.max(1, effectConfig.radius ?? 120);
+    const damage = Math.max(0, effectConfig.damage ?? GAME.combat.baseDamage);
+    const hitBricks = [];
+    for (const brick of scene.world.all('brick')) {
+      const centerX = brick.x + brick.width / 2;
+      const centerY = brick.y + brick.height / 2;
+      if (Math.hypot(centerX - ball.x, centerY - ball.y) > radius) continue;
+      combat.applyDamage({
+        ball,
+        brick,
+        damage,
+        damageType: effectConfig.damageType ?? 'explosive',
+        cause,
+      });
+      hitBricks.push(brick);
+    }
+    const payload = {
+      ball,
+      x: ball.x,
+      y: ball.y,
+      radius,
+      damage,
+      hitBricks,
+      color: effectConfig.color ?? '#ff5cab',
+      secondaryColor: effectConfig.secondaryColor ?? '#9b6cff',
+      cause,
+    };
+    scene.events.emit('ball:exploded', payload);
+    return payload;
+  };
+
   registry.registerCollisionPolicy('bounce', ({ ball, contact }) => {
     reflectBall(ball, contact.normal);
     return { action: 'bounce' };
@@ -103,34 +136,13 @@ export function createDefaultBallBehaviors() {
   });
 
   registry.registerPeriodicEffect('area-blast', ({ scene, combat, ball, effectConfig }) => {
-    const radius = Math.max(1, effectConfig.radius ?? 120);
-    const damage = Math.max(0, effectConfig.damage ?? GAME.combat.baseDamage);
-    const hitBricks = [];
-    for (const brick of scene.world.all('brick')) {
-      const centerX = brick.x + brick.width / 2;
-      const centerY = brick.y + brick.height / 2;
-      if (Math.hypot(centerX - ball.x, centerY - ball.y) > radius) continue;
-      combat.applyDamage({
-        ball,
-        brick,
-        damage,
-        damageType: effectConfig.damageType ?? 'explosive',
-        cause: 'periodic-explosion',
-      });
-      hitBricks.push(brick);
-    }
-    const payload = {
-      ball,
-      x: ball.x,
-      y: ball.y,
-      radius,
-      damage,
-      hitBricks,
-      color: effectConfig.color ?? '#ff5cab',
-      secondaryColor: effectConfig.secondaryColor ?? '#9b6cff',
-    };
-    scene.events.emit('ball:exploded', payload);
-    return payload;
+    return explode({ scene, combat, ball, effectConfig, cause: 'periodic-explosion' });
+  });
+
+  registry.registerDamageEffect('impact-blast', ({ scene, combat, ball, effectConfig }) => {
+    const chance = Math.max(0, Math.min(1, effectConfig.chance ?? 0));
+    if (registry.random() >= chance) return null;
+    return explode({ scene, combat, ball, effectConfig, cause: 'impact-explosion' });
   });
 
   registry.registerDamageEffect('chain-lightning', ({ scene, combat, ball, brick, effectConfig }) => {
@@ -172,6 +184,24 @@ export function createDefaultBallBehaviors() {
         damageType: 'electric',
         cause: 'chain-lightning',
       });
+      const strikeChance = Math.max(0, Math.min(1, effectConfig.strikeChance ?? 0));
+      if (registry.random() < strikeChance && previous.active) {
+        const strikeResult = combat.applyDamage({
+          ball,
+          brick: previous,
+          damage,
+          damageType: 'electric',
+          cause: 'lightning-strike',
+        });
+        scene.events.emit('ball:lightning-strike', {
+          ball,
+          brick: previous,
+          x: previous.x + previous.width / 2,
+          y: previous.y + previous.height / 2,
+          damage,
+          destroyed: strikeResult.destroyed,
+        });
+      }
     }
 
     const payload = { ball, targets, points, damage, additionalTargets: targets.length - 1 };

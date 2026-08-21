@@ -55,6 +55,7 @@ export class AutoFireSystem {
       shots.push({
         shotType: 'top-launch', randomized: true, emitterId: 'top',
         speedMultiplier: GAME.upgrade.topLaunchSpeedMultiplier, source: 'top-launch',
+        damageMultiplier: this.scene.upgrades.topImpactDamageMultiplier,
         visualOverrides: {
           renderer: 'top-launch', color: '#ffad5a', coreColor: '#fffdf0',
           innerColor: '#ffe17a', trailColor: '#ff5c7d', trailLength: 16,
@@ -77,6 +78,17 @@ export class AutoFireSystem {
             damageType: 'explosive', color: '#ff4fa3', secondaryColor: '#9b6cff',
           },
         }],
+        damageEffects: this.scene.upgrades.levels.blastImpact > 0 ? [{
+          id: 'impact-blast',
+          config: {
+            chance: this.scene.upgrades.blastImpactChance,
+            radius: GAME.upgrade.blastRadius,
+            damage: GAME.upgrade.blastDamage,
+            damageType: 'explosive',
+            color: '#ff4fa3',
+            secondaryColor: '#9b6cff',
+          },
+        }] : [],
       });
     }
 
@@ -84,7 +96,10 @@ export class AutoFireSystem {
       shots.push({
         shotType: 'void-orbit', randomized: true, definitionId: VOID_ORBIT_BALL_ID,
         emitterId: 'paddle', source: 'void-orbit',
-        orbitingDamageOverrides: { angularSpeed: this.scene.upgrades.voidOrbiterAngularSpeed },
+        orbitingDamageOverrides: {
+          angularSpeed: this.scene.upgrades.voidOrbiterAngularSpeed,
+          orbitRadius: this.scene.upgrades.voidOrbitRadius,
+        },
       });
     }
 
@@ -92,7 +107,12 @@ export class AutoFireSystem {
       shots.push({
         shotType: 'micro-navigation', randomized: true, definitionId: MICRO_NAVIGATION_BALL_ID,
         emitterId: 'paddle', source: 'micro-navigation',
-        guidanceOverrides: { strength: this.scene.upgrades.navigationStrength },
+        guidanceOverrides: {
+          strength: this.scene.upgrades.navigationStrength,
+          returnStrikeChance: this.scene.upgrades.navigationReturnChance,
+          returnStrikeDelay: GAME.upgrade.navigationReturnDelay,
+          returnStrikeChainDecay: GAME.upgrade.navigationReturnChainDecay,
+        },
       });
     }
 
@@ -101,7 +121,10 @@ export class AutoFireSystem {
         shotType: 'lightning', randomized: true, definitionId: LIGHTNING_BALL_ID,
         emitterId: 'paddle', source: 'lightning',
         damageEffectConfigOverrides: {
-          'chain-lightning': { additionalTargets: this.scene.upgrades.lightningAdditionalTargets },
+          'chain-lightning': {
+            additionalTargets: this.scene.upgrades.lightningAdditionalTargets,
+            strikeChance: this.scene.upgrades.lightningStrikeChance,
+          },
         },
       });
     }
@@ -123,8 +146,15 @@ export class AutoFireSystem {
 
   #fireAutomaticShot() {
     const pool = this.availablePrimaryShots();
-    const selectedIndex = Math.min(pool.length - 1, Math.floor(this.random() * pool.length));
-    this.#fireBall(pool[selectedIndex]);
+    const fireFromPool = () => {
+      const selectedIndex = Math.min(pool.length - 1, Math.floor(this.random() * pool.length));
+      this.#fireBall(pool[selectedIndex]);
+    };
+    fireFromPool();
+    if (this.scene.upgrades.levels.doubleShot > 0) {
+      fireFromPool();
+      return;
+    }
     if (this.random() < this.scene.upgrades.extraBallChance) {
       this.#fireBall({
         randomized: true, definitionId: BASIC_BALL_ID,
@@ -138,9 +168,11 @@ export class AutoFireSystem {
     definitionId = this.ballDefinitionId,
     emitterId = this.emitterId,
     speedMultiplier = 1,
+    damageMultiplier = 1,
     source = 'automatic',
     visualOverrides = {},
     periodicEffects = [],
+    damageEffects = [],
     orbitingDamageOverrides = {},
     guidanceOverrides = {},
     damageEffectConfigOverrides = {},
@@ -156,8 +188,8 @@ export class AutoFireSystem {
       lives: this.scene.upgrades.newBallLives,
       damageOverride: definition.contactDamage === false
         ? definition.damage
-        : definition.damage + this.scene.upgrades.ballDamageBonus,
-      launchSource: source, visualOverrides, periodicEffects,
+        : (definition.damage + this.scene.upgrades.ballDamageBonus) * damageMultiplier,
+      launchSource: source, visualOverrides, periodicEffects, damageEffects,
       orbitingDamageOverrides, guidanceOverrides, damageEffectConfigOverrides,
     });
     this.scene.world.add(ball);

@@ -126,7 +126,7 @@ scene.configureAutoFire({
 
 ## 强化系统
 
-第一次累计 `GAME.upgrade.scoreInterval` 分（默认 2000 分）会冻结战场并弹出强化选择，此后每次强化需要的新增分数会随已获得强化次数增长。阈值可以连续跨越，多出来的选择会排队，不会丢失。每次从尚未满级的强化池中随机抽取 3 项且不会重复。
+第一次累计 `GAME.upgrade.scoreInterval` 分（默认 2000 分）会触发强化选择，此后每次强化需要的新增分数会随已获得强化次数增长。阈值可以连续跨越，多出来的选择会排队，不会丢失。每次从尚未满级且满足前置条件的强化池中随机抽取 3 项且不会重复。顶部的卡牌图鉴按钮会展示全部卡片、当前等级和前置关系；玩家可以预先勾选自动升级，随机三选一命中勾选项时会直接升级而不暂停，未命中则照常暂停选择。
 
 ```text
 第 n 次强化所需新增分数 = scoreInterval
@@ -135,17 +135,16 @@ scene.configureAutoFire({
 
 结果会按 `scoreCostRounding` 取整。默认成长系数为 `0.18`、指数为 `1.25`，可以在 `config.js` 中调整；因此强化间隔会持续拉长，不会在高分阶段连续遮挡战场。
 
-- **高速装填**：发射间隔每级乘以 `rapidFireMultiplier`，最低不会小于 `minimumFireInterval`。
-- **分裂发射**：每级增加额外生成一颗球的概率；概率按 `1 - (1 - extraBallChancePerLevel) ^ 等级` 叠加。每轮主球保持竖直向上，只有追加生成的球会向上半场随机方向发射。
-- **天顶增援**：每次自动发射时有 25% 概率从顶部追加一颗向下飞行的球，其发射速度为基础速度的 200%；顶部球带有金橙色脉冲光环、彗星尾迹和入场火花，最多 1 级。
-- **爆裂核心**：每次自动发射时有 25% 概率从挡板追加一颗爆裂球；爆裂球每 1.5 秒对半径 120 内的全部方块造成 1 点伤害，带有紫红旋转核心、爆炸倒计时环、扩张冲击波与双色碎屑，最多 1 级。
-- **爆裂增压**：只有解锁爆裂核心后才会出现；每级将爆炸间隔乘以 `blastIntervalMultiplierPerLevel`，最低不小于 `blastMinimumInterval`，最多 3 级，并立即刷新场上爆裂球的间隔。
-- **天顶续航**：只有解锁天顶增援后才会出现；天顶球未通过普通底线保留判定时，每级再获得 25% 的独立触底保留概率，最多 3 级。
-- **动能超频**：所有现存和未来球的速度每级乘以 `ballSpeedMultiplierPerLevel`。
-- **延展力场**：挡板长度每级增加 20%，最多 3 级；满级后退出候选池。
-- **底线回响**：球落底时每级增加 20% 向上反弹概率，最多 3 级；满级概率为 60%。
+- **发射类**：高速装填最多 5 级；分裂发射最多 10 级，满级后解锁二连发，使每轮两颗球分别从普通球与全部已解锁特殊球中独立抽取；五连速射每级增加 5% 触发率，最多 3 级。
+- **挡板与生存类**：双重挡板最多 3 级，副挡板依次获得主挡板 33%、66%、100% 的宽度；生命增幅最多 2 级；延展力场最多 5 级；底线回响最多 3 级。
+- **数值类**：动能超频最多 10 级；攻击强化最多 99 级且以低权重进入候选池。
+- **天顶增援**：与普通球等概率替代发射；天顶续航提高触底保留率，天顶冲击按其 200% 发射速度逐级转化碰撞伤害，两项均最多 3 级。
+- **爆裂核心**：与普通球等概率替代发射；爆裂增压缩短周期爆炸间隔，爆裂触发增加碰撞时额外爆炸概率，两项均最多 3 级。
+- **虚空双星**：虚空超旋提高子球公转速度，虚空扩轨扩大子球旋转半径，两项均最多 3 级。
+- **微导航**：导航增幅提高持续修正力度；导航回马枪会在撞击反弹后延迟判定并重新冲向原方块，连续成功时概率递减，两项均最多 3 级。
+- **链式闪电**：闪电扩链增加弹射目标；雷霆追击使每段闪电链有概率追加带独立视觉效果的落雷，两项均最多 3 级。
 
-这些参数都集中在 `config.js` 的 `GAME.upgrade`。高速装填、分裂发射和动能超频可无限重复选择；天顶增援与爆裂核心最多 1 级，爆裂增压、天顶续航、延展力场和底线回响最多 3 级。
+所有数值和等级上限都集中在 `config.js` 的 `GAME.upgrade`。
 
 ## 连击计分
 
@@ -156,6 +155,6 @@ scene.configureAutoFire({
 - **UI/成就/存档**：订阅事件总线，避免把平台能力写进物理或实体代码。
 - **多球**：物理层已经按球集合运行；主球用 `ballFactory.createPrimary()`，分裂等衍生小球只用 `ballFactory.createDerived()`。
 
-现有事件包括 `game:started`、`game:stats`、`game:lost`、`ball:launched`、`ball:loadout-changed`、`ball:split`、`ball:exploded`、`ball:bounce`、`ball:lost`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`brick:wave-refilled`、`boss:wave`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
+现有事件包括 `game:started`、`game:stats`、`game:lost`、`ball:launched`、`ball:loadout-changed`、`ball:split`、`ball:exploded`、`ball:lightning-chain`、`ball:lightning-strike`、`ball:navigation-return`、`ball:bounce`、`ball:lost`、`upgrade:offered`、`upgrade:selected`、`upgrade:auto-changed`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`brick:wave-refilled`、`boss:wave`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
 
 开发控制台可通过 `window.breakout.engine` 与 `window.breakout.scene` 检查运行状态或挂载临时实验代码。

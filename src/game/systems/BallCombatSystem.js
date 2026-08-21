@@ -114,6 +114,11 @@ export class BallCombatSystem {
         damage: blastEffect.config.damage,
         radius: blastEffect.config.radius,
       };
+      const impactEffect = ball.damageEffects.find(({ id }) => id === 'impact-blast');
+      if (impactEffect) {
+        impactEffect.config.damage = blastEffect.config.damage;
+        impactEffect.config.radius = blastEffect.config.radius;
+      }
     }
 
     const lightningEffect = ball.damageEffects.find(({ id }) => id === 'chain-lightning');

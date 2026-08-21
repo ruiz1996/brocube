@@ -156,3 +156,16 @@ export class LightningArc extends Entity {
     });
   }
 }
+
+export class LightningStrike extends Entity {
+  constructor({ x, y, color = '#d9f8ff', life = .28 }) {
+    super('lightning-strike', {
+      x,
+      y,
+      color,
+      life,
+      maxLife: life,
+      seed: Math.random() * 1000,
+    });
+  }
+}
