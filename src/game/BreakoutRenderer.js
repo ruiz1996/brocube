@@ -58,6 +58,10 @@ export class BreakoutRenderer {
     ctx.stroke();
 
     if (brick.variant === 'boss') {
+      const armorPoints = points.map((point) => ({
+        x: centerX + (point.x - centerX) * .72,
+        y: centerY + (point.y - centerY) * .68,
+      }));
       ctx.shadowColor = '#fff0f7';
       ctx.shadowBlur = 18;
       ctx.strokeStyle = 'rgba(255, 240, 247, .82)';
@@ -66,6 +70,49 @@ export class BreakoutRenderer {
       this.#polygonPath(ctx, points);
       ctx.stroke();
       ctx.setLineDash([]);
+
+      ctx.globalAlpha = .18;
+      ctx.fillStyle = brick.color;
+      this.#polygonPath(ctx, armorPoints);
+      ctx.fill();
+      ctx.globalAlpha = .86;
+      ctx.strokeStyle = '#ffb1d4';
+      ctx.lineWidth = 1.4;
+      this.#polygonPath(ctx, armorPoints);
+      ctx.stroke();
+
+      ctx.globalAlpha = .58;
+      ctx.strokeStyle = '#fff0f7';
+      ctx.lineWidth = 1;
+      for (let index = 0; index < points.length; index += 2) {
+        ctx.beginPath();
+        ctx.moveTo(points[index].x, points[index].y);
+        ctx.lineTo(armorPoints[index].x, armorPoints[index].y);
+        ctx.stroke();
+      }
+
+      ctx.globalAlpha = 1;
+      const coreRadius = Math.min(brick.width, brick.height) * .14;
+      const core = ctx.createRadialGradient(
+        centerX - coreRadius * .25,
+        centerY - coreRadius * .25,
+        0,
+        centerX,
+        centerY,
+        coreRadius,
+      );
+      core.addColorStop(0, '#ffffff');
+      core.addColorStop(.28, '#ffb1d4');
+      core.addColorStop(1, 'rgba(255, 63, 143, .08)');
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, coreRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff0f7';
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, coreRadius * 1.35, 0, Math.PI * 2);
+      ctx.stroke();
     }
 
     ctx.shadowBlur = 12;

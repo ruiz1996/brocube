@@ -8,10 +8,13 @@ import { BreakoutScene } from '../src/game/BreakoutScene.js';
 import { GAME } from '../src/game/config.js';
 import { Brick } from '../src/game/entities/entities.js';
 import {
+  BOSS_SHAPE_IDS,
   calculateBrickSizeHealthMultiplier,
   calculateExpectedBrickHitPoints,
+  createBossPolygon,
   selectBrickDimensions,
   selectBrickHitPoints,
+  selectBossPolygon,
 } from '../src/game/systems/BrickFieldSystem.js';
 import { calculateUpgradeScoreCost } from '../src/game/systems/UpgradeSystem.js';
 import { calculateUpgradeProgress } from '../src/ui/GameUI.js';
@@ -1341,6 +1344,14 @@ test('每三分钟生成包含Boss和小方块的Boss波次', () => {
   assert.equal(bosses.length, 1);
   assert.equal(minions.length, GAME.brick.bossMinionCount);
   assert.equal(waves[0].wave, 1);
+  assert.equal(bosses[0].width, GAME.brick.bossWidth);
+  assert.equal(bosses[0].height, GAME.brick.bossHeight);
+  assert.ok(BOSS_SHAPE_IDS.includes(bosses[0].bossShape));
+  assert.deepEqual(
+    bosses[0].points,
+    createBossPolygon(GAME.brick.bossWidth, GAME.brick.bossHeight, bosses[0].bossShape),
+  );
+  assert.ok(bosses[0].points.length >= 6);
   assert.ok(bosses[0].maxHitPoints > Math.max(...minions.map((brick) => brick.maxHitPoints)));
   assert.ok(bosses[0].width > Math.max(...minions.map((brick) => brick.width)));
   assert.ok([...bosses, ...minions].every((brick) => (
@@ -1348,6 +1359,34 @@ test('每三分钟生成包含Boss和小方块的Boss波次', () => {
     && brick.x + brick.width <= GAME.width - GAME.brick.spawnSideMargin
   )));
   scene.exit();
+});
+
+test('Boss 波次可随机选择多套对称凸多边形轮廓', () => {
+  const width = GAME.brick.bossWidth;
+  const height = GAME.brick.bossHeight;
+  const selections = [0, .26, .51, .76].map((value) => (
+    selectBossPolygon(width, height, () => value)
+  ));
+  assert.deepEqual(selections.map(({ shapeId }) => shapeId), BOSS_SHAPE_IDS);
+  assert.equal(new Set(selections.map(({ points }) => points.length)).size >= 3, true);
+
+  for (const { shapeId, points } of selections) {
+    assert.deepEqual(points, createBossPolygon(width, height, shapeId));
+    assert.ok(points.every(({ x, y }) => x >= 0 && x <= width && y >= 0 && y <= height));
+    for (const point of points) {
+      assert.ok(points.some((mirror) => (
+        Math.abs(point.x + mirror.x - width) < .0001
+        && Math.abs(point.y - mirror.y) < .0001
+      )));
+    }
+    const turns = points.map((point, index) => {
+      const next = points[(index + 1) % points.length];
+      const after = points[(index + 2) % points.length];
+      return (next.x - point.x) * (after.y - next.y)
+        - (next.y - point.y) * (after.x - next.x);
+    });
+    assert.ok(turns.every((turn) => turn > 0) || turns.every((turn) => turn < 0));
+  }
 });
 
 test('场上方块清空后立即在顶部补充一整排', () => {

@@ -95,7 +95,7 @@ export class Ball extends Entity {
 }
 
 export class Brick extends Entity {
-  constructor({ x, y, width, height, points, hitPoints = GAME.combat.baseHealth, color, score = 100, variant = 'normal' }) {
+  constructor({ x, y, width, height, points, hitPoints = GAME.combat.baseHealth, color, score = 100, variant = 'normal', bossShape = null }) {
     super('brick', {
       tags: ['collidable', 'breakable'],
       x, y, width, height,
@@ -105,6 +105,7 @@ export class Brick extends Entity {
       ],
       hitPoints, maxHitPoints: hitPoints, color, score,
       variant,
+      bossShape,
       hitFlash: 0,
     });
   }
