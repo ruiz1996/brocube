@@ -1,4 +1,5 @@
 import { GAME, COLORS } from '../config.js';
+import { BALL_TRAITS, normalizeTraits } from './BallTraits.js';
 
 export const BASIC_BALL_ID = 'basic';
 export const VOID_ORBIT_BALL_ID = 'void-orbit';
@@ -52,6 +53,7 @@ export class BallDefinitionRegistry {
       contactDamage: definition.contactDamage ?? true,
       radius: definition.radius ?? GAME.ball.radius,
       speedMultiplier: definition.speedMultiplier ?? 1,
+      traits: normalizeTraits(definition.traits),
       damageEffects: (definition.damageEffects ?? []).map(normalizeDamageEffect),
       periodicEffects: (definition.periodicEffects ?? []).map(normalizePeriodicEffect),
       collisionPolicy: definition.collisionPolicy ?? 'bounce',
@@ -88,6 +90,7 @@ export function createDefaultBallDefinitions() {
     damageType: 'kinetic',
     collisionPolicy: 'bounce',
   }).register(VOID_ORBIT_BALL_ID, {
+    traits: [BALL_TRAITS.VOID_ORBIT],
     damage: 0,
     damageType: 'void',
     contactDamage: false,
@@ -114,6 +117,7 @@ export function createDefaultBallDefinitions() {
       trailLength: 10,
     },
   }).register(MICRO_NAVIGATION_BALL_ID, {
+    traits: [BALL_TRAITS.MICRO_NAVIGATION],
     damage: GAME.combat.baseDamage,
     damageType: 'kinetic',
     collisionPolicy: 'bounce',
@@ -130,6 +134,7 @@ export function createDefaultBallDefinitions() {
       trailLength: 11,
     },
   }).register(LIGHTNING_BALL_ID, {
+    traits: [BALL_TRAITS.CHAIN_LIGHTNING],
     damage: 0,
     damageType: 'electric',
     contactDamage: false,

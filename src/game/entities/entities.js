@@ -24,6 +24,9 @@ export class Ball extends Entity {
     speed = GAME.ball.speed,
     angle = -Math.PI / 2,
     launchSource = 'manual',
+    traits = [],
+    fusionId = null,
+    fusionComponents = [],
     level = GAME.ball.defaultLevel,
     lives = GAME.ball.defaultLives,
     kills = 0,
@@ -44,6 +47,9 @@ export class Ball extends Entity {
       definitionId,
       role,
       launchSource,
+      traits: new Set(traits),
+      fusionId,
+      fusionComponents: [...fusionComponents],
       level: Math.max(1, Math.round(level)),
       lives: Math.max(0, Math.round(lives)),
       kills: Math.max(0, Math.round(kills)),
@@ -92,6 +98,8 @@ export class Ball extends Entity {
       trail: [],
     });
   }
+
+  hasTrait(trait) { return this.traits.has(trait); }
 }
 
 export class Brick extends Entity {

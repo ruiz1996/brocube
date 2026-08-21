@@ -28,8 +28,18 @@ import {
 } from '../src/game/balls/BallDefinitionRegistry.js';
 import { BallFactory } from '../src/game/balls/BallFactory.js';
 import { getOrbiterTrail } from '../src/game/balls/Orbiter.js';
-import { getBallLevelVisual } from '../src/game/balls/BallRendererRegistry.js';
+import { BallRendererRegistry, getBallLevelVisual } from '../src/game/balls/BallRendererRegistry.js';
 import { createDefaultBallEmitters } from '../src/game/emitters/BallEmitterRegistry.js';
+import {
+  BallFusionRegistry,
+  composeShotDescriptors,
+} from '../src/game/balls/BallFusionRegistry.js';
+import { BALL_TRAITS } from '../src/game/balls/BallTraits.js';
+import {
+  PlayerLeaderboardService,
+  detectReleaseChannel,
+  normalizeDisplayName,
+} from '../src/online/PlayerLeaderboardService.js';
 
 test('EventBus 支持 once 和主动解绑', () => {
   const events = new EventBus();
@@ -178,6 +188,101 @@ test('生存玩法可自动发球、击毁多边形且落球不结束游戏', ()
   scene.update(1 / 120);
   assert.equal(scene.state, 'lost');
   scene.exit();
+});
+
+test('玩家名称允许重复但会规范空白并限制长度，正式版与 Beta 可分榜', () => {
+  assert.equal(normalizeDisplayName('  同名  玩家  '), '同名 玩家');
+  assert.throws(() => normalizeDisplayName('   '), /请输入玩家名称/);
+  assert.throws(() => normalizeDisplayName('一二三四五六七八九十一二三四五六七'), /最多 16 个字符/);
+  assert.equal(detectReleaseChannel({ pathname: '/brocube/', search: '' }), 'stable');
+  assert.equal(detectReleaseChannel({ pathname: '/brocube/beta/', search: '' }), 'beta');
+  assert.equal(detectReleaseChannel({ pathname: '/', search: '?channel=beta' }), 'beta');
+});
+
+test('未配置在线服务时仍建立稳定本机身份，并只保留当前玩家最高分', async () => {
+  const values = new Map();
+  const storage = {
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, value); },
+    removeItem(key) { values.delete(key); },
+  };
+  const config = {
+    supabaseUrl: '',
+    supabasePublishableKey: '',
+    leaderboardLimit: 20,
+    gameVersion: 'test-v1',
+  };
+  const service = new PlayerLeaderboardService({
+    config,
+    storage,
+    location: { pathname: '/beta/', search: '' },
+  });
+  const initial = await service.initialize();
+  assert.equal(initial.mode, 'local');
+  assert.equal(initial.channel, 'beta');
+  assert.equal(initial.needsName, true);
+  assert.ok(initial.playerId);
+
+  const named = await service.setDisplayName('测试玩家');
+  assert.equal(named.displayName, '测试玩家');
+  await service.submitRun({ score: 1200, elapsed: 12.345, upgrades: { rapidFire: 1 } });
+  await service.submitRun({ score: 900, elapsed: 20, upgrades: {} });
+  const leaderboard = await service.getLeaderboard();
+  assert.equal(leaderboard.length, 1);
+  assert.equal(leaderboard[0].score, 1200);
+  assert.equal(leaderboard[0].duration_seconds, 12.35);
+
+  const restored = new PlayerLeaderboardService({ config, storage });
+  const restoredState = await restored.initialize();
+  assert.equal(restoredState.playerId, named.playerId);
+  assert.equal(restoredState.displayName, '测试玩家');
+});
+
+test('Supabase REST 接入可创建匿名用户、保存可重名昵称、提交成绩并读取榜单', async () => {
+  const values = new Map();
+  const storage = {
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, value); },
+    removeItem(key) { values.delete(key); },
+  };
+  const requests = [];
+  const userId = '11111111-1111-4111-8111-111111111111';
+  const responses = [
+    { access_token: 'access', refresh_token: 'refresh', expires_in: 3600, user: { id: userId } },
+    [],
+    [{ user_id: userId, display_name: '同名玩家' }],
+    [{ id: 1, user_id: userId, score: 3210 }],
+    [{ rank: 1, player_code: 'AB12', display_name: '同名玩家', score: 3210, is_current: true }],
+  ];
+  const fetcher = async (url, options) => {
+    requests.push({ url, options });
+    const payload = responses.shift();
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  const service = new PlayerLeaderboardService({
+    config: {
+      supabaseUrl: 'https://example.supabase.co',
+      supabasePublishableKey: 'sb_publishable_test',
+      leaderboardLimit: 20,
+      gameVersion: 'test-v1',
+    },
+    storage,
+    fetcher,
+    location: { pathname: '/', search: '' },
+  });
+
+  assert.equal((await service.initialize()).mode, 'online');
+  await service.setDisplayName('同名玩家');
+  await service.submitRun({ score: 3210, elapsed: 40, upgrades: {} });
+  const leaderboard = await service.getLeaderboard();
+  assert.equal(leaderboard[0].is_current, true);
+  assert.match(requests[0].url, /\/auth\/v1\/signup$/);
+  assert.deepEqual(JSON.parse(requests[0].options.body), { data: {}, gotrue_meta_security: {} });
+  assert.ok(requests.slice(1).every(({ options }) => options.headers.Authorization === 'Bearer access'));
+  assert.match(requests.at(-1).url, /\/rest\/v1\/rpc\/get_leaderboard$/);
 });
 
 test('球触底扣除一点生命，生命耗尽后才消失', () => {
@@ -576,6 +681,25 @@ test('不同球等级使用轻量且明确区分的外观层级', () => {
   });
 });
 
+test('球视觉层会按底层、主体、上层顺序叠加', () => {
+  const order = [];
+  const renderers = new BallRendererRegistry()
+    .register('orb', () => order.push('body'))
+    .registerLayer('aura', () => order.push('underlay'))
+    .registerLayer('nodes', () => order.push('overlay'));
+  renderers.render({}, {
+    level: 1,
+    visual: {
+      renderer: 'orb',
+      layers: [
+        { id: 'aura', phase: 'underlay' },
+        'nodes',
+      ],
+    },
+  });
+  assert.deepEqual(order, ['underlay', 'body', 'overlay']);
+});
+
 test('发射器可独立切换挡板发射和顶部发射', () => {
   const emitters = createDefaultBallEmitters();
   const scene = {
@@ -601,6 +725,54 @@ test('发射器可独立切换挡板发射和顶部发射', () => {
   });
   assert.equal(topShot.y, GAME.playTop + GAME.ball.radius + 3);
   assert.ok(Math.sin(topShot.angle) > 0);
+});
+
+test('融合配方可组合发射、能力、数值、特征与视觉层', () => {
+  const top = {
+    componentId: 'top-launch',
+    emitterId: 'top',
+    speedMultiplier: 2,
+    traits: [BALL_TRAITS.TOP_LAUNCH],
+    visualLayers: ['top-aura'],
+    damageEffects: [{ id: 'pulse', config: { damage: 10 } }],
+  };
+  const voidOrbit = {
+    componentId: 'void-orbit',
+    definitionId: VOID_ORBIT_BALL_ID,
+    speedMultiplier: 1.25,
+    damageMultiplier: 1.5,
+    traits: [BALL_TRAITS.VOID_ORBIT],
+    visualLayers: ['void-satellites'],
+    damageEffects: [{ id: 'pulse', config: { radius: 80 } }],
+  };
+  const composed = composeShotDescriptors([top, voidOrbit], {
+    emitterId: 'top',
+    speedMultiplier: 1.2,
+    visualLayers: ['fusion-flare'],
+  });
+  assert.equal(composed.emitterId, 'top');
+  assert.equal(composed.definitionId, VOID_ORBIT_BALL_ID);
+  assert.equal(composed.speedMultiplier, 3);
+  assert.equal(composed.damageMultiplier, 1.5);
+  assert.deepEqual(
+    composed.traits,
+    [BALL_TRAITS.TOP_LAUNCH, BALL_TRAITS.VOID_ORBIT],
+  );
+  assert.deepEqual(composed.visualLayers, ['top-aura', 'void-satellites', 'fusion-flare']);
+  assert.deepEqual(composed.damageEffects, [{
+    id: 'pulse',
+    config: { damage: 10, radius: 80 },
+  }]);
+
+  const fusions = new BallFusionRegistry().register('top-void', {
+    componentIds: ['top-launch', 'void-orbit'],
+    overrides: { emitterId: 'top', randomized: true },
+  });
+  assert.equal(fusions.availableShots([top], {}).length, 0);
+  const fusionShot = fusions.availableShots([top, voidOrbit], {})[0];
+  assert.equal(fusionShot.shotType, 'top-void');
+  assert.equal(fusionShot.source, 'fusion:top-void');
+  assert.deepEqual(fusionShot.fusionComponents, ['top-launch', 'void-orbit']);
 });
 
 test('普通方块尺寸采样偏向横向扁长并保留随机范围', () => {
@@ -799,9 +971,11 @@ test('所有已解锁特殊球与普通球各占一个等概率替代槽位', ()
   const expectedTypes = [
     'basic', 'top-launch', 'blast-launch', 'void-orbit', 'micro-navigation', 'lightning',
   ];
+  const availableShots = scene.autoFire.availablePrimaryShots();
+  assert.deepEqual(availableShots.map(({ shotType }) => shotType), expectedTypes);
   assert.deepEqual(
-    scene.autoFire.availablePrimaryShots().map(({ shotType }) => shotType),
-    expectedTypes,
+    availableShots.map(({ randomized }) => randomized),
+    [false, true, false, false, false, false],
   );
 
   for (let index = 0; index < expectedTypes.length; index += 1) {
@@ -814,6 +988,101 @@ test('所有已解锁特殊球与普通球各占一个等概率替代槽位', ()
     ['automatic', 'top-launch', 'blast-launch', 'void-orbit', 'micro-navigation', 'lightning'],
   );
   assert.equal(launches.length, expectedTypes.length);
+  const paddleLaunches = launches.filter(({ emitterId }) => emitterId === 'paddle');
+  assert.ok(paddleLaunches.every(({ ball }) => Math.abs(ball.velocityX) < .0001));
+  assert.ok(paddleLaunches.every(({ ball }) => ball.velocityY < 0));
+  scene.exit();
+});
+
+test('运行时注册的天顶虚空配方进入发射池并同时继承双方强化归属', () => {
+  const events = new EventBus();
+  const launches = [];
+  events.on('ball:launched', (payload) => launches.push(payload));
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  const chooseDirectly = (id) => {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+    assert.equal(scene.chooseUpgrade(id), true);
+  };
+  chooseDirectly('topLaunch');
+  chooseDirectly('voidOrbit');
+
+  scene.fusionEnabled = false;
+  scene.registerBallFusion('top-void', {
+    componentIds: ['top-launch', 'void-orbit'],
+    isAvailable: ({ scene: currentScene }) => currentScene.fusionEnabled,
+    overrides: {
+      emitterId: 'top',
+      randomized: true,
+      definitionId: VOID_ORBIT_BALL_ID,
+      visualOverrides: { renderer: 'void-orbit' },
+      visualLayers: ['top-launch-aura'],
+    },
+  });
+  assert.equal(
+    scene.autoFire.availablePrimaryShots().some(({ fusionId }) => fusionId === 'top-void'),
+    false,
+  );
+  scene.fusionEnabled = true;
+  assert.equal(scene.autoFire.availablePrimaryShots().at(-1).fusionId, 'top-void');
+
+  scene.autoFire.random = () => .99;
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const fusionLaunch = launches.find(({ fusionId }) => fusionId === 'top-void');
+  assert.ok(fusionLaunch);
+  assert.equal(fusionLaunch.emitterId, 'top');
+  assert.equal(fusionLaunch.ball.fusionId, 'top-void');
+  assert.deepEqual(fusionLaunch.ball.fusionComponents, ['top-launch', 'void-orbit']);
+  assert.equal(fusionLaunch.ball.hasTrait(BALL_TRAITS.TOP_LAUNCH), true);
+  assert.equal(fusionLaunch.ball.hasTrait(BALL_TRAITS.VOID_ORBIT), true);
+  assert.equal(fusionLaunch.ball.orbiters.length, 2);
+  assert.equal(
+    Math.hypot(fusionLaunch.ball.velocityX, fusionLaunch.ball.velocityY),
+    GAME.ball.speed * GAME.upgrade.topLaunchSpeedMultiplier,
+  );
+  assert.ok(fusionLaunch.ball.velocityY > 0);
+  assert.deepEqual(fusionLaunch.ball.visual.layers, ['top-launch-aura']);
+
+  chooseDirectly('voidOrbitRadius');
+  assert.ok(fusionLaunch.ball.orbiters.every(({ orbitRadius }) => (
+    orbitRadius === scene.upgrades.voidOrbitRadius
+  )));
+  chooseDirectly('topRecovery');
+  fusionLaunch.ball.y = GAME.playBottom + fusionLaunch.ball.radius + 1;
+  fusionLaunch.ball.velocityY = 100;
+  scene.ballPhysics.random = () => .2;
+  scene.ballPhysics.update(0);
+  assert.equal(fusionLaunch.ball.active, true);
+  assert.ok(fusionLaunch.ball.velocityY < 0);
+
+  chooseDirectly('lightning');
+  scene.registerBallFusion('void-lightning', {
+    componentIds: ['void-orbit', 'chain-lightning'],
+    overrides: {
+      emitterId: 'paddle',
+      randomized: false,
+      definitionId: LIGHTNING_BALL_ID,
+      visualOverrides: { renderer: 'lightning' },
+    },
+  });
+  scene.autoFire.timeUntilShot = 0;
+  scene.update(1 / 120);
+  const abilityFusion = launches.find(({ fusionId }) => fusionId === 'void-lightning');
+  assert.ok(abilityFusion);
+  assert.equal(abilityFusion.ball.hasTrait(BALL_TRAITS.VOID_ORBIT), true);
+  assert.equal(abilityFusion.ball.hasTrait(BALL_TRAITS.CHAIN_LIGHTNING), true);
+  assert.equal(abilityFusion.ball.orbiters.length, 2);
+  assert.ok(abilityFusion.ball.damageEffects.some(({ id }) => id === 'chain-lightning'));
   scene.exit();
 });
 
@@ -1041,6 +1310,8 @@ test('虚空超旋需要虚空双星前置，最多三级并作用于现有及�
 
 test('微导航每次反弹只锁定一个附近目标，导航增幅最多强化三级', () => {
   const events = new EventBus();
+  const selectedUpgrades = [];
+  events.on('upgrade:selected', (payload) => selectedUpgrades.push(payload));
   const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
   const scene = new BreakoutScene();
   scene.enter({
@@ -1059,6 +1330,9 @@ test('微导航每次反弹只锁定一个附近目标，导航增幅最多强�
   prepareChoice();
   assert.equal(scene.chooseUpgrade('microNavigation'), true);
   assert.equal(scene.upgrades.isAvailable('navigationStrength'), true);
+  const firstNavigationStrengthCard = scene.upgrades.catalog()
+    .find(({ id }) => id === 'navigationStrength');
+  assert.match(firstNavigationStrengthCard.description, /0\.55 → 0\.77 rad\/s/);
   scene.autoFire.random = () => .99;
   scene.autoFire.timeUntilShot = 0;
   scene.update(1 / 120);
@@ -1092,8 +1366,14 @@ test('微导航每次反弹只锁定一个附近目标，导航增幅最多强�
     const expected = GAME.upgrade.navigationStrength
       * GAME.upgrade.navigationStrengthMultiplierPerLevel ** level;
     assert.ok(Math.abs(navigationBall.guidance.strength - expected) < .0001);
+    assert.equal(selectedUpgrades.at(-1).name, '导航增幅');
+    assert.equal(selectedUpgrades.at(-1).level, level);
+    assert.equal(selectedUpgrades.at(-1).maxLevel, GAME.upgrade.navigationStrengthMaxLevel);
   }
   assert.equal(scene.upgrades.isAvailable('navigationStrength'), false);
+  const cappedNavigationStrengthCard = scene.upgrades.catalog()
+    .find(({ id }) => id === 'navigationStrength');
+  assert.match(cappedNavigationStrengthCard.description, /1\.51 rad\/s（已满级）/);
 
   scene.autoFire.timeUntilShot = 0;
   scene.update(1 / 120);

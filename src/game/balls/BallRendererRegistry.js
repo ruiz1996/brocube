@@ -63,7 +63,10 @@ function renderLevelAura(ctx, ball) {
 }
 
 export class BallRendererRegistry {
-  constructor() { this.renderers = new Map(); }
+  constructor() {
+    this.renderers = new Map();
+    this.layers = new Map();
+  }
 
   register(id, renderer) {
     if (!id || this.renderers.has(id)) throw new Error(`Ball renderer already exists: ${id}`);
@@ -71,10 +74,28 @@ export class BallRendererRegistry {
     return this;
   }
 
+  registerLayer(id, renderer) {
+    if (!id || this.layers.has(id)) throw new Error(`Ball visual layer already exists: ${id}`);
+    this.layers.set(id, renderer);
+    return this;
+  }
+
   render(ctx, ball) {
     const renderer = this.renderers.get(ball.visual.renderer) ?? this.renderers.get('orb');
+    this.#renderLayers(ctx, ball, 'underlay');
     renderer(ctx, ball);
+    this.#renderLayers(ctx, ball, 'overlay');
     renderLevelAura(ctx, ball);
+  }
+
+  #renderLayers(ctx, ball, phase) {
+    for (const entry of ball.visual.layers ?? []) {
+      const normalized = typeof entry === 'string'
+        ? { id: entry, phase: 'overlay', config: {} }
+        : { phase: 'overlay', config: {}, ...entry };
+      if (normalized.phase !== phase) continue;
+      this.layers.get(normalized.id)?.(ctx, ball, normalized.config);
+    }
   }
 }
 

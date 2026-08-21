@@ -1,4 +1,5 @@
 import { GAME } from '../config.js';
+import { BALL_TRAITS } from '../balls/BallTraits.js';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -152,7 +153,7 @@ export class BallPhysicsSystem {
       if (ball.y - ball.radius > GAME.playBottom) {
         const bottomBounceSaved = this.random() < this.scene.upgrades.bottomBounceChance;
         const topRecoverySaved = !bottomBounceSaved
-          && ball.launchSource === 'top-launch'
+          && ball.hasTrait(BALL_TRAITS.TOP_LAUNCH)
           && this.random() < this.scene.upgrades.topRecoveryChance;
         if (bottomBounceSaved || topRecoverySaved) {
           ball.y = GAME.playBottom - ball.radius;

@@ -18,6 +18,25 @@
 
 推荐先把新玩法提交到 `beta` 并通过内测链接验证；确认稳定后再合并到 `main`，正式路由才会更新。
 
+## 匿名玩家与排行榜
+
+游戏包含一套可选的 Supabase 在线身份与最高分榜：
+
+- 玩家第一次进入时填写名称；名称允许重复，后台使用 Supabase 匿名用户 UUID 区分玩家。
+- 界面会附加四位玩家编号，例如 `张三 #8F21`，方便区分同名玩家。
+- 同一浏览器会自动恢复匿名身份；清除网站数据或更换设备后会成为新玩家。未来可在同一 UUID 上继续增加账号绑定与局外成长。
+- 每局失败后自动保存成绩，每名玩家只以个人最高分参与排名。
+- 正式版和 Beta 使用同一套身份服务，但根据页面路由进入不同榜单。
+
+未配置 Supabase 时，系统会自动使用本机身份和本机最高分榜，不影响游戏启动。启用全球榜需要：
+
+1. 创建 Supabase 项目，在 Authentication 设置中开启 Anonymous Sign-Ins。
+2. 在 Supabase SQL Editor 中执行 [`supabase/schema.sql`](./supabase/schema.sql)。
+3. 打开 [`src/online/onlineConfig.js`](./src/online/onlineConfig.js)，填写项目 URL 和 Publishable key。
+4. 重新部署页面。Publishable key 本来就是浏览器可见配置，不要在代码中填写 Secret key 或 Service Role key。
+
+本地开发默认归入正式榜；使用 `http://127.0.0.1:5173/?channel=beta` 可以测试 Beta 榜。后续局外成长建议新增以 `user_id` 为主键的 `player_progress` 表，继续复用现有匿名身份。
+
 ## 运行
 
 Windows 用户直接双击 `启动游戏.cmd`，启动器会在后台运行本地服务并打开浏览器。
@@ -68,7 +87,9 @@ src/
 - `BallEmitterRegistry` 决定发射来源和方向，内置 `paddle` 与 `top`。
 - `BallBehaviorRegistry` 管理命中特效、周期能力以及 `bounce`、`pierce`、`split` 等碰撞策略。
 - `BallCombatSystem` 是唯一伤害结算入口，统一发出受击、受伤和击杀事件。
-- `BallRendererRegistry` 按球定义选择外观绘制器。
+- `BallRendererRegistry` 按球定义选择主体绘制器，并支持可叠加的 underlay / overlay 视觉层。
+- `BallFusionRegistry` 按组件 ID 注册融合配方，统一组合发射器、球定义、数值倍率、能力配置、特征标签和视觉层。
+- `BallTraits` 保存稳定的能力标签；强化通过 `ball.hasTrait()` 判断归属，因此融合球可以同时继承多套强化。
 
 衍生球的限制被集中在 `BallFactory.createDerived()`：它必定使用 `basic` 定义、1 点动能伤害、普通反弹、无命中特效，并使用更小的半径。分裂策略也只能通过此入口生成衍生球，因此特殊主球的闪电、穿透或再次分裂不会被继承。
 
@@ -111,6 +132,29 @@ scene.configureAutoFire({
 ```
 
 要创建分裂球，只需把定义的 `collisionPolicy` 改为 `split`，并在 `collisionConfig` 中填写 `splitCount`、`spreadRadians`、`derivedSpeedRatio` 和可选的 `consumeParent`。由此产生的小球仍会被强制转为基础衍生球。
+
+### 球融合框架
+
+默认融合注册表为空，不会改变当前发射池。未来解锁融合卡片时，可在场景初始化阶段注册配方：
+
+```js
+scene.registerBallFusion('top-void', {
+  componentIds: ['top-launch', 'void-orbit'],
+  requiredUpgrades: ['topVoidFusion'],
+  selectionWeight: 0.6,
+  overrides: {
+    emitterId: 'top',
+    randomized: true,
+    definitionId: 'void-orbit',
+    visualOverrides: { renderer: 'void-orbit' },
+    visualLayers: ['top-launch-aura'],
+  },
+});
+```
+
+只有组件已经进入当前特殊球池、`requiredUpgrades` 达到要求且可选的 `isAvailable(context)` 返回真时，融合项才会进入发射池。融合后的球会保存 `fusionId`、`fusionComponents` 和全部组件的 `traits`；速度与伤害倍率相乘，同 ID 的伤害/周期效果配置会合并，配方 `overrides` 负责解决发射器或主体外观冲突。`selectionWeight` 可独立控制融合项权重，不需要复制发射槽。
+
+视觉层通过 `scene.ballRenderers.registerLayer(id, renderer)` 注册；配方中的 `visualLayers` 可以使用字符串（默认 overlay），也可以使用 `{ id, phase: 'underlay', config }`。这样融合球可以保留一个主体绘制器，同时叠加另一组件的光环、尾迹或节点效果。
 
 - **新砖块**：扩展 `Brick` 的数据字段或替换 `BrickFieldSystem` 的多边形生成器，由独立系统监听 `brick:hit` 处理。
 - **血量曲线**：编辑 `config.js` 中的 `brick.healthFormula`。期望血量由基础值、时间幂函数、分数幂函数相加得到，没有固定上限；`randomSpread` 控制同一时刻方块之间的随机差异。

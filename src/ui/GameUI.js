@@ -27,6 +27,10 @@ export class GameUI {
     this.primaryLabel = document.querySelector('#primary-button-label');
     this.upgradeOverlay = document.querySelector('#upgrade-overlay');
     this.upgradeOptions = document.querySelector('#upgrade-options');
+    this.upgradeToast = document.querySelector('#upgrade-toast');
+    this.upgradeToastKicker = document.querySelector('#upgrade-toast-kicker');
+    this.upgradeToastName = document.querySelector('#upgrade-toast-name');
+    this.upgradeToastLevel = document.querySelector('#upgrade-toast-level');
     this.comboIndicator = document.querySelector('#combo-indicator');
     this.comboCount = document.querySelector('#combo-count');
     this.comboMultiplier = document.querySelector('#combo-multiplier');
@@ -37,6 +41,7 @@ export class GameUI {
     this.upgradeLibraryClose = document.querySelector('#upgrade-library-close');
     this.upgradeLibraryList = document.querySelector('#upgrade-library-list');
     this.resumeAfterLibrary = false;
+    this.upgradeToastTimer = null;
     this.#bind();
     this.updateStats(scene.snapshot());
   }
@@ -85,8 +90,9 @@ export class GameUI {
     events.on('ball:launched', () => this.audio.play(340, .06, .018));
     events.on('brick:breached', () => this.audio.play(70, .28, .04));
     events.on('upgrade:offered', ({ options }) => this.#showUpgrades(options));
-    events.on('upgrade:selected', ({ pendingChoices }) => {
+    events.on('upgrade:selected', ({ name, level, maxLevel, automatic, pendingChoices }) => {
       this.audio.play(520, .12, .035);
+      this.#showUpgradeToast({ name, level, maxLevel, automatic });
       if (pendingChoices === 0) this.#hideUpgrades();
       if (!this.upgradeLibrary.classList.contains('is-hidden')) this.#renderUpgradeLibrary();
     });
@@ -128,7 +134,7 @@ export class GameUI {
   #showUpgrades(options) {
     this.upgradeOptions.innerHTML = options.map((option) => `
       <button class="upgrade-card" type="button" data-upgrade-id="${option.id}">
-        <span class="upgrade-level">LV.${String(option.level).padStart(2, '0')}</span>
+        <span class="upgrade-level">LV.${String(option.level).padStart(2, '0')} → LV.${String(option.level + 1).padStart(2, '0')}</span>
         <span class="upgrade-name">${option.name}</span>
         <span class="upgrade-description">${option.description}</span>
         <span class="upgrade-action">选择强化 →</span>
@@ -141,6 +147,22 @@ export class GameUI {
   #hideUpgrades() {
     this.upgradeOverlay.classList.add('is-hidden');
     this.upgradeOverlay.setAttribute('aria-hidden', 'true');
+  }
+
+  #showUpgradeToast({ name, level, maxLevel, automatic }) {
+    if (!this.upgradeToast) return;
+    const maximum = Number.isFinite(maxLevel) ? ` / ${String(maxLevel).padStart(2, '0')}` : '';
+    this.upgradeToastKicker.textContent = automatic ? 'AUTO UPGRADE APPLIED' : 'UPGRADE APPLIED';
+    this.upgradeToastName.textContent = name;
+    this.upgradeToastLevel.textContent = `已升至 LV.${String(level).padStart(2, '0')}${maximum}`;
+    this.upgradeToast.classList.remove('is-hidden', 'is-pulsing');
+    void this.upgradeToast.offsetWidth;
+    this.upgradeToast.classList.add('is-pulsing');
+    clearTimeout(this.upgradeToastTimer);
+    this.upgradeToastTimer = setTimeout(() => {
+      this.upgradeToast.classList.add('is-hidden');
+      this.upgradeToast.classList.remove('is-pulsing');
+    }, 1800);
   }
 
   #showUpgradeLibrary() {

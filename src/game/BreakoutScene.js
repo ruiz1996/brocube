@@ -16,6 +16,7 @@ import { BallFactory } from './balls/BallFactory.js';
 import { createDefaultBallEmitters } from './emitters/BallEmitterRegistry.js';
 import { createDefaultBallBehaviors } from './balls/BallBehaviorRegistry.js';
 import { createDefaultBallRenderers } from './balls/BallRendererRegistry.js';
+import { createDefaultBallFusions } from './balls/BallFusionRegistry.js';
 
 export class BreakoutScene {
   enter(context) {
@@ -26,6 +27,7 @@ export class BreakoutScene {
     this.ballEmitters = createDefaultBallEmitters();
     this.ballBehaviors = createDefaultBallBehaviors();
     this.ballRenderers = createDefaultBallRenderers();
+    this.ballFusions = createDefaultBallFusions();
     this.renderer = new BreakoutRenderer(this);
     this.upgrades = new UpgradeSystem(this);
     this.autoFire = new AutoFireSystem(this);
@@ -84,6 +86,12 @@ export class BreakoutScene {
   render(ctx) { this.renderer.render(ctx); }
 
   chooseUpgrade(id) { return this.upgrades.choose(id); }
+
+  registerBallFusion(id, recipe) {
+    this.ballFusions.register(id, recipe);
+    this.events.emit('ball:fusion-registered', { id, recipe });
+    return this;
+  }
 
   configureAutoFire({ definitionId = this.autoFire.ballDefinitionId, emitterId = this.autoFire.emitterId }) {
     this.ballDefinitions.get(definitionId);

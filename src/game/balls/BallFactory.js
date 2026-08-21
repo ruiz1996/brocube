@@ -1,6 +1,7 @@
 import { Ball } from '../entities/entities.js';
 import { GAME } from '../config.js';
 import { BASIC_BALL_ID } from './BallDefinitionRegistry.js';
+import { BALL_TRAITS, normalizeTraits } from './BallTraits.js';
 
 export class BallFactory {
   constructor(definitions) { this.definitions = definitions; }
@@ -13,12 +14,19 @@ export class BallFactory {
     speed = GAME.ball.speed,
     speedMultiplier = 1,
     launchSource = 'manual',
+    traits = [],
+    fusionId = null,
+    fusionComponents = [],
     level = GAME.ball.defaultLevel,
     lives = GAME.ball.defaultLives,
     damageOverride,
     visualOverrides = {},
+    visualLayers = [],
     damageEffects = [],
     periodicEffects = [],
+    replaceDefinitionAbilities = false,
+    guidance = null,
+    orbitingDamage = null,
     orbitingDamageOverrides = {},
     guidanceOverrides = {},
     damageEffectConfigOverrides = {},
@@ -33,12 +41,22 @@ export class BallFactory {
       angle,
       speed: speed * speedMultiplier * definition.speedMultiplier,
       launchSource,
+      traits: normalizeTraits(definition.traits, traits),
+      fusionId,
+      fusionComponents,
       level,
       lives,
       damageOverride,
       visualOverrides,
-      damageEffects: [...definition.damageEffects, ...damageEffects],
-      periodicEffects: [...definition.periodicEffects, ...periodicEffects],
+      visualLayers,
+      damageEffects: replaceDefinitionAbilities
+        ? damageEffects
+        : [...definition.damageEffects, ...damageEffects],
+      periodicEffects: replaceDefinitionAbilities
+        ? periodicEffects
+        : [...definition.periodicEffects, ...periodicEffects],
+      guidance: replaceDefinitionAbilities ? guidance : definition.guidance,
+      orbitingDamage: replaceDefinitionAbilities ? orbitingDamage : definition.orbitingDamage,
       orbitingDamageOverrides,
       guidanceOverrides,
       damageEffectConfigOverrides,
@@ -59,6 +77,7 @@ export class BallFactory {
       definitionId: BASIC_BALL_ID,
       role: 'derived',
       launchSource: 'derived',
+      traits: [BALL_TRAITS.DERIVED],
       level,
       lives,
       x,
@@ -88,12 +107,18 @@ export class BallFactory {
     angle,
     speed,
     launchSource,
+    traits,
+    fusionId,
+    fusionComponents,
     level,
     lives,
     damageOverride,
     visualOverrides = {},
+    visualLayers = [],
     damageEffects = definition.damageEffects,
     periodicEffects = [],
+    guidance = definition.guidance,
+    orbitingDamage = definition.orbitingDamage,
     orbitingDamageOverrides = {},
     guidanceOverrides = {},
     damageEffectConfigOverrides = {},
@@ -106,6 +131,9 @@ export class BallFactory {
       angle,
       speed,
       launchSource,
+      traits,
+      fusionId,
+      fusionComponents,
       level,
       lives,
       radius: definition.radius,
@@ -124,9 +152,13 @@ export class BallFactory {
       })),
       collisionPolicy: definition.collisionPolicy,
       collisionConfig: { ...definition.collisionConfig },
-      guidance: definition.guidance ? { ...definition.guidance, ...guidanceOverrides } : null,
-      orbiters: this.#createOrbiters(definition.orbitingDamage, orbitingDamageOverrides),
-      visual: { ...definition.visual, ...visualOverrides },
+      guidance: guidance ? { ...guidance, ...guidanceOverrides } : null,
+      orbiters: this.#createOrbiters(orbitingDamage, orbitingDamageOverrides),
+      visual: {
+        ...definition.visual,
+        ...visualOverrides,
+        layers: [...(definition.visual.layers ?? []), ...visualLayers],
+      },
     });
   }
 

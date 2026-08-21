@@ -5,6 +5,7 @@ import {
   MICRO_NAVIGATION_BALL_ID,
   VOID_ORBIT_BALL_ID,
 } from '../balls/BallDefinitionRegistry.js';
+import { BALL_TRAITS } from '../balls/BallTraits.js';
 
 export class AutoFireSystem {
   constructor(scene) {
@@ -45,6 +46,7 @@ export class AutoFireSystem {
   availablePrimaryShots() {
     const shots = [{
       shotType: 'basic',
+      componentId: 'basic',
       randomized: false,
       definitionId: this.ballDefinitionId,
       emitterId: this.emitterId,
@@ -53,7 +55,8 @@ export class AutoFireSystem {
 
     if (this.scene.upgrades.levels.topLaunch > 0) {
       shots.push({
-        shotType: 'top-launch', randomized: true, emitterId: 'top',
+        shotType: 'top-launch', componentId: 'top-launch', traits: [BALL_TRAITS.TOP_LAUNCH],
+        randomized: true, emitterId: 'top',
         speedMultiplier: GAME.upgrade.topLaunchSpeedMultiplier, source: 'top-launch',
         damageMultiplier: this.scene.upgrades.topImpactDamageMultiplier,
         visualOverrides: {
@@ -65,7 +68,8 @@ export class AutoFireSystem {
 
     if (this.scene.upgrades.levels.blastLaunch > 0) {
       shots.push({
-        shotType: 'blast-launch', randomized: true, emitterId: 'paddle', source: 'blast-launch',
+        shotType: 'blast-launch', componentId: 'blast-core', traits: [BALL_TRAITS.BLAST_CORE],
+        randomized: false, emitterId: 'paddle', source: 'blast-launch',
         visualOverrides: {
           renderer: 'blast-core', color: '#ff4fa3', coreColor: '#fff5ff',
           innerColor: '#d98cff', trailColor: '#9b6cff', trailLength: 12,
@@ -94,7 +98,8 @@ export class AutoFireSystem {
 
     if (this.scene.upgrades.levels.voidOrbit > 0) {
       shots.push({
-        shotType: 'void-orbit', randomized: true, definitionId: VOID_ORBIT_BALL_ID,
+        shotType: 'void-orbit', componentId: 'void-orbit', traits: [BALL_TRAITS.VOID_ORBIT],
+        randomized: false, definitionId: VOID_ORBIT_BALL_ID,
         emitterId: 'paddle', source: 'void-orbit',
         orbitingDamageOverrides: {
           angularSpeed: this.scene.upgrades.voidOrbiterAngularSpeed,
@@ -105,7 +110,9 @@ export class AutoFireSystem {
 
     if (this.scene.upgrades.levels.microNavigation > 0) {
       shots.push({
-        shotType: 'micro-navigation', randomized: true, definitionId: MICRO_NAVIGATION_BALL_ID,
+        shotType: 'micro-navigation', componentId: 'micro-navigation',
+        traits: [BALL_TRAITS.MICRO_NAVIGATION],
+        randomized: false, definitionId: MICRO_NAVIGATION_BALL_ID,
         emitterId: 'paddle', source: 'micro-navigation',
         guidanceOverrides: {
           strength: this.scene.upgrades.navigationStrength,
@@ -118,7 +125,9 @@ export class AutoFireSystem {
 
     if (this.scene.upgrades.levels.lightning > 0) {
       shots.push({
-        shotType: 'lightning', randomized: true, definitionId: LIGHTNING_BALL_ID,
+        shotType: 'lightning', componentId: 'chain-lightning',
+        traits: [BALL_TRAITS.CHAIN_LIGHTNING],
+        randomized: false, definitionId: LIGHTNING_BALL_ID,
         emitterId: 'paddle', source: 'lightning',
         damageEffectConfigOverrides: {
           'chain-lightning': {
@@ -129,7 +138,10 @@ export class AutoFireSystem {
       });
     }
 
-    return shots;
+    return [
+      ...shots,
+      ...this.scene.ballFusions.availableShots(shots, { scene: this.scene }),
+    ];
   }
 
   #updateRapidShots(dt) {
@@ -147,8 +159,17 @@ export class AutoFireSystem {
   #fireAutomaticShot() {
     const pool = this.availablePrimaryShots();
     const fireFromPool = () => {
-      const selectedIndex = Math.min(pool.length - 1, Math.floor(this.random() * pool.length));
-      this.#fireBall(pool[selectedIndex]);
+      const totalWeight = pool.reduce((sum, shot) => sum + (shot.selectionWeight ?? 1), 0);
+      let roll = this.random() * totalWeight;
+      let selected = pool.at(-1);
+      for (const shot of pool) {
+        roll -= shot.selectionWeight ?? 1;
+        if (roll < 0) {
+          selected = shot;
+          break;
+        }
+      }
+      this.#fireBall(selected);
     };
     fireFromPool();
     if (this.scene.upgrades.levels.doubleShot > 0) {
@@ -170,12 +191,19 @@ export class AutoFireSystem {
     speedMultiplier = 1,
     damageMultiplier = 1,
     source = 'automatic',
+    traits = [],
+    fusionId = null,
+    fusionComponents = [],
     visualOverrides = {},
+    visualLayers = [],
     periodicEffects = [],
     damageEffects = [],
     orbitingDamageOverrides = {},
     guidanceOverrides = {},
     damageEffectConfigOverrides = {},
+    replaceDefinitionAbilities = false,
+    guidance = null,
+    orbitingDamage = null,
   }) {
     const definition = this.scene.ballDefinitions.get(definitionId);
     const shot = this.scene.ballEmitters.createShot(emitterId, {
@@ -189,12 +217,15 @@ export class AutoFireSystem {
       damageOverride: definition.contactDamage === false
         ? definition.damage
         : (definition.damage + this.scene.upgrades.ballDamageBonus) * damageMultiplier,
-      launchSource: source, visualOverrides, periodicEffects, damageEffects,
+      launchSource: source, traits, fusionId, fusionComponents,
+      visualOverrides, visualLayers, periodicEffects, damageEffects,
       orbitingDamageOverrides, guidanceOverrides, damageEffectConfigOverrides,
+      replaceDefinitionAbilities, guidance, orbitingDamage,
     });
     this.scene.world.add(ball);
     this.scene.events.emit('ball:launched', {
       ball, automatic: true, emitterId, definitionId, source,
+      fusionId, fusionComponents: [...fusionComponents], traits: [...ball.traits],
     });
     return ball;
   }

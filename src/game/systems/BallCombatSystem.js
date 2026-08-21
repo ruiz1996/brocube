@@ -1,5 +1,5 @@
 import { GAME } from '../config.js';
-import { VOID_ORBIT_BALL_ID } from '../balls/BallDefinitionRegistry.js';
+import { BALL_TRAITS } from '../balls/BallTraits.js';
 
 export class BallCombatSystem {
   constructor(scene) { this.scene = scene; }
@@ -134,7 +134,7 @@ export class BallCombatSystem {
       };
     }
 
-    if (ball.definitionId === VOID_ORBIT_BALL_ID && ball.orbiters.length > 0) {
+    if (ball.hasTrait(BALL_TRAITS.VOID_ORBIT) && ball.orbiters.length > 0) {
       for (let count = 0; count < GAME.ball.levelVoidOrbiterBonus; count += 1) {
         const template = ball.orbiters[0];
         ball.orbiters.push({

@@ -15,6 +15,9 @@
           <span>NEON <b>BREAKER</b></span>
         </a>
         <div class="header-actions">
+          <button id="player-button" class="icon-button" type="button" aria-label="查看玩家档案与排行榜" aria-expanded="false">
+            <span aria-hidden="true">♙</span>
+          </button>
           <button id="upgrade-library-button" class="icon-button" type="button" aria-label="查看强化图鉴与自动升级设置" aria-expanded="false">
             <span aria-hidden="true">▦</span>
           </button>
@@ -64,6 +67,11 @@
             <span id="combo-multiplier" class="combo-multiplier">×1.25 SCORE</span>
             <span class="combo-timer" aria-hidden="true"></span>
           </div>
+          <div id="upgrade-toast" class="upgrade-toast is-hidden" aria-live="polite" aria-atomic="true">
+            <span id="upgrade-toast-kicker" class="upgrade-toast-kicker"></span>
+            <strong id="upgrade-toast-name" class="upgrade-toast-name"></strong>
+            <span id="upgrade-toast-level" class="upgrade-toast-level"></span>
+          </div>
           <div id="game-overlay" class="game-overlay">
             <p id="overlay-kicker" class="overlay-kicker">SYSTEM READY</p>
             <h1 id="overlay-title">准备击破</h1>
@@ -89,6 +97,44 @@
               <button id="upgrade-library-close" class="icon-button" type="button" aria-label="关闭强化图鉴">×</button>
             </div>
             <div id="upgrade-library-list" class="upgrade-library-list"></div>
+          </div>
+          <div id="player-panel" class="player-panel is-hidden" aria-hidden="true">
+            <div class="player-panel-card" role="dialog" aria-modal="true" aria-labelledby="player-panel-title">
+              <div class="player-panel-header">
+                <div>
+                  <p class="overlay-kicker">PLAYER NETWORK</p>
+                  <h2 id="player-panel-title">玩家与排行榜</h2>
+                </div>
+                <button id="player-panel-close" class="icon-button" type="button" aria-label="关闭玩家面板">×</button>
+              </div>
+
+              <section class="player-profile" aria-label="玩家档案">
+                <div class="player-identity-row">
+                  <strong id="player-identity">正在建立身份…</strong>
+                  <span id="player-service-status">正在连接玩家服务</span>
+                </div>
+                <div class="player-name-field">
+                  <label for="player-name-input">玩家名称</label>
+                  <span class="player-name-controls">
+                    <input id="player-name-input" type="text" maxlength="16" autocomplete="nickname" placeholder="输入你的名称">
+                    <button id="player-name-save" class="secondary-button" type="button">保存</button>
+                  </span>
+                </div>
+                <p id="player-form-status" class="player-form-status" aria-live="polite"></p>
+              </section>
+
+              <section class="leaderboard" aria-label="最高分排行榜">
+                <div class="leaderboard-header">
+                  <div>
+                    <span class="status-label">PERSONAL BEST</span>
+                    <h3>最高分排行榜</h3>
+                  </div>
+                  <button id="leaderboard-refresh" class="secondary-button" type="button">刷新</button>
+                </div>
+                <ol id="leaderboard-list" class="leaderboard-list"></ol>
+                <p id="leaderboard-empty" class="leaderboard-empty">正在读取排行榜…</p>
+              </section>
+            </div>
           </div>
         </div>
 

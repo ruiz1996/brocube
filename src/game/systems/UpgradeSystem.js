@@ -1,10 +1,6 @@
 import { GAME } from '../config.js';
 import { Paddle } from '../entities/entities.js';
-import {
-  LIGHTNING_BALL_ID,
-  MICRO_NAVIGATION_BALL_ID,
-  VOID_ORBIT_BALL_ID,
-} from '../balls/BallDefinitionRegistry.js';
+import { BALL_TRAITS } from '../balls/BallTraits.js';
 
 const UPGRADE_IDS = [
   'rapidFire',
@@ -307,7 +303,7 @@ export class UpgradeSystem {
         * GAME.upgrade.topImpactDamageScalePerLevel * (this.levels.topImpact - 1);
       const ratio = this.topImpactDamageMultiplier / previousMultiplier;
       for (const ball of this.scene.world.all('ball')) {
-        if (ball.launchSource === 'top-launch' && ball.contactDamage !== false) ball.damage *= ratio;
+        if (ball.hasTrait(BALL_TRAITS.TOP_LAUNCH) && ball.contactDamage !== false) ball.damage *= ratio;
       }
     } else if (id === 'blastCooldown') {
       for (const ball of this.scene.world.all('ball')) {
@@ -319,7 +315,7 @@ export class UpgradeSystem {
       }
     } else if (id === 'blastImpact') {
       for (const ball of this.scene.world.all('ball')) {
-        if (ball.launchSource !== 'blast-launch') continue;
+        if (!ball.hasTrait(BALL_TRAITS.BLAST_CORE)) continue;
         let impact = ball.damageEffects.find(({ id: effectId }) => effectId === 'impact-blast');
         if (!impact) {
           impact = { id: 'impact-blast', config: {} };
@@ -334,31 +330,31 @@ export class UpgradeSystem {
       }
     } else if (id === 'voidOrbitSpeed') {
       for (const ball of this.scene.world.all('ball')) {
-        if (ball.definitionId !== VOID_ORBIT_BALL_ID) continue;
+        if (!ball.hasTrait(BALL_TRAITS.VOID_ORBIT)) continue;
         for (const orbiter of ball.orbiters) {
           orbiter.angularSpeed = this.voidOrbiterAngularSpeed;
         }
       }
     } else if (id === 'voidOrbitRadius') {
       for (const ball of this.scene.world.all('ball')) {
-        if (ball.definitionId !== VOID_ORBIT_BALL_ID) continue;
+        if (!ball.hasTrait(BALL_TRAITS.VOID_ORBIT)) continue;
         for (const orbiter of ball.orbiters) orbiter.orbitRadius = this.voidOrbitRadius;
       }
     } else if (id === 'navigationStrength') {
       for (const ball of this.scene.world.all('ball')) {
-        if (ball.definitionId === MICRO_NAVIGATION_BALL_ID && ball.guidance) {
+        if (ball.hasTrait(BALL_TRAITS.MICRO_NAVIGATION) && ball.guidance) {
           ball.guidance.strength = this.navigationStrength;
         }
       }
     } else if (id === 'navigationReturn') {
       for (const ball of this.scene.world.all('ball')) {
-        if (ball.definitionId === MICRO_NAVIGATION_BALL_ID && ball.guidance) {
+        if (ball.hasTrait(BALL_TRAITS.MICRO_NAVIGATION) && ball.guidance) {
           ball.guidance.returnStrikeChance = this.navigationReturnChance;
         }
       }
     } else if (id === 'lightningJumps') {
       for (const ball of this.scene.world.all('ball')) {
-        if (ball.definitionId !== LIGHTNING_BALL_ID) continue;
+        if (!ball.hasTrait(BALL_TRAITS.CHAIN_LIGHTNING)) continue;
         const effect = ball.damageEffects.find(({ id: effectId }) => effectId === 'chain-lightning');
         if (effect) {
           effect.config.additionalTargets = this.lightningAdditionalTargets
@@ -367,14 +363,18 @@ export class UpgradeSystem {
       }
     } else if (id === 'lightningStrike') {
       for (const ball of this.scene.world.all('ball')) {
-        if (ball.definitionId !== LIGHTNING_BALL_ID) continue;
+        if (!ball.hasTrait(BALL_TRAITS.CHAIN_LIGHTNING)) continue;
         const effect = ball.damageEffects.find(({ id: effectId }) => effectId === 'chain-lightning');
         if (effect) effect.config.strikeChance = this.lightningStrikeChance;
       }
     }
 
+    const selectedOption = this.catalog().find(({ id: optionId }) => optionId === id);
     this.scene.events.emit('upgrade:selected', {
       id,
+      name: selectedOption?.name ?? id,
+      level: this.levels[id],
+      maxLevel: selectedOption?.maxLevel ?? null,
       automatic,
       levels: { ...this.levels },
       pendingChoices: this.pendingChoices,
@@ -387,6 +387,16 @@ export class UpgradeSystem {
   }
 
   catalog() {
+    const navigationStrengthNextLevel = Math.min(
+      this.levels.navigationStrength + 1,
+      GAME.upgrade.navigationStrengthMaxLevel,
+    );
+    const navigationStrengthNext = GAME.upgrade.navigationStrength
+      * GAME.upgrade.navigationStrengthMultiplierPerLevel ** navigationStrengthNextLevel;
+    const navigationStrengthDescription = this.levels.navigationStrength
+      >= GAME.upgrade.navigationStrengthMaxLevel
+      ? `最大转向速度 ${this.navigationStrength.toFixed(2)} rad/s（已满级）`
+      : `最大转向速度 ${this.navigationStrength.toFixed(2)} → ${navigationStrengthNext.toFixed(2)} rad/s（提升 ${Math.round((GAME.upgrade.navigationStrengthMultiplierPerLevel - 1) * 100)}%）`;
     return [
       {
         id: 'rapidFire',
@@ -516,7 +526,7 @@ export class UpgradeSystem {
         name: '导航增幅',
         level: this.levels.navigationStrength,
         maxLevel: GAME.upgrade.navigationStrengthMaxLevel,
-        description: `微导航转向力度提升 ${Math.round((GAME.upgrade.navigationStrengthMultiplierPerLevel - 1) * 100)}%（最多 ${GAME.upgrade.navigationStrengthMaxLevel} 级）`,
+        description: navigationStrengthDescription,
       },
       {
         id: 'navigationReturn',
