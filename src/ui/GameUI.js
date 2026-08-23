@@ -24,6 +24,11 @@ export class GameUI {
     this.audio = audio;
     this.score = document.querySelector('#score-value');
     this.worldLevel = document.querySelector('#world-level-value');
+    this.worldSelector = document.querySelector('#world-selector');
+    this.worldSelectorValue = document.querySelector('#world-selector-value');
+    this.worldUnlockCopy = document.querySelector('#world-unlock-copy');
+    this.worldLevelPrev = document.querySelector('#world-level-prev');
+    this.worldLevelNext = document.querySelector('#world-level-next');
     this.balls = document.querySelector('#balls-value');
     this.shot = document.querySelector('#shot-value');
     this.upgradeProgressTrack = document.querySelector('#upgrade-progress-track');
@@ -54,6 +59,7 @@ export class GameUI {
     this.upgradeToastTimer = null;
     this.#bind();
     this.updateStats(scene.snapshot());
+    this.#renderWorldSelector();
   }
 
   #bind() {
@@ -62,6 +68,14 @@ export class GameUI {
       if (['idle', 'lost', 'settled'].includes(this.scene.state)) this.scene.startNewGame();
       else if (this.engine.paused) this.engine.setPaused(false);
       this.#hideOverlay();
+    });
+    this.worldLevelPrev.addEventListener('click', () => {
+      this.scene.setWorldLevel(this.scene.worldLevel - 1);
+      this.#renderWorldSelector();
+    });
+    this.worldLevelNext.addEventListener('click', () => {
+      this.scene.setWorldLevel(this.scene.worldLevel + 1);
+      this.#renderWorldSelector();
     });
     this.pauseButton.addEventListener('click', () => {
       if (this.scene.state === 'playing') this.engine.togglePause();
@@ -87,7 +101,12 @@ export class GameUI {
     });
 
     events.on('game:stats', (data) => this.updateStats(data));
-    events.on('game:started', (data) => { this.updateStats(data); this.#hideOverlay(); this.#hideUpgrades(); });
+    events.on('game:started', (data) => {
+      this.updateStats(data);
+      this.#renderWorldSelector();
+      this.#hideOverlay();
+      this.#hideUpgrades();
+    });
     events.on('game:lost', (data) => { this.#hideUpgrades(); this.#showOverlay('DEFENSE BREACHED', '防线失守', `坚持了 ${this.#formatTime(data.elapsed)}，最终得分 ${String(Math.round(data.score)).padStart(6, '0')}。`, '重新开始'); });
     events.on('game:settled', (data) => {
       this.#hideUpgrades();
@@ -150,6 +169,16 @@ export class GameUI {
         detail: `Boss Rush 额外生命倍率 ×${bossRushHealthMultiplier}`,
       });
     });
+    events.on('world-level:changed', () => this.#renderWorldSelector());
+    events.on('world-level:unlocked', ({ unlockedLevel }) => {
+      this.audio.play(880, .24, .04);
+      this.#renderWorldSelector();
+      this.#showUpgradeToast({
+        name: `世界 W${unlockedLevel} 已解锁`,
+        kicker: 'NEW WORLD UNLOCKED',
+        detail: '本局结束后可在开始界面选择',
+      });
+    });
     events.on('combo:changed', (combo) => this.#updateCombo(combo));
     events.on('combo:ended', () => this.#hideCombo());
   }
@@ -178,10 +207,26 @@ export class GameUI {
     this.title.textContent = title;
     this.copy.textContent = copy;
     this.primaryLabel.textContent = buttonLabel;
+    const canSelectWorld = ['idle', 'lost', 'settled'].includes(this.scene.state);
+    this.worldSelector.classList.toggle('is-hidden', !canSelectWorld);
+    this.#renderWorldSelector();
     this.overlay.classList.remove('is-hidden');
   }
 
   #hideOverlay() { this.overlay.classList.add('is-hidden'); }
+
+  #renderWorldSelector() {
+    const selectedLevel = this.scene.worldLevel;
+    const unlockedLevel = this.scene.worldProgression?.unlockedLevel ?? selectedLevel;
+    const canSelect = ['idle', 'lost', 'settled'].includes(this.scene.state);
+    this.worldSelectorValue.textContent = formatWorldLevel(selectedLevel);
+    this.worldLevelPrev.disabled = !canSelect || selectedLevel <= 1;
+    this.worldLevelNext.disabled = !canSelect || selectedLevel >= unlockedLevel;
+    this.worldUnlockCopy.textContent = selectedLevel < unlockedLevel
+      ? `已解锁至 ${formatWorldLevel(unlockedLevel)}`
+      : `击败第 ${GAME.worldLevel.unlockBossWave} 个 Boss 解锁 ${formatWorldLevel(unlockedLevel + 1)}`;
+    this.worldSelector.setAttribute('aria-label', `选择世界等级，当前 ${formatWorldLevel(selectedLevel)}，最高解锁 ${formatWorldLevel(unlockedLevel)}`);
+  }
 
   #showUpgrades(options) {
     this.upgradeOptions.innerHTML = options.map((option) => `

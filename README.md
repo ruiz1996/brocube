@@ -4,7 +4,7 @@
 
 前六轮每存活 3 分钟会生成一轮 Boss 波次，其中包含 1 个大型高血量 Boss 与若干小型护卫方块；范围伤害可以同时处理护卫并削减 Boss。第七轮开始进入 Boss Rush：停止普通随机补怪，击杀当前 Boss 后 6 秒刷新下一轮 Boss 和护卫，第 7/8/9…轮额外获得 5/25/125…倍 Boss Rush 血量倍率。世界等级 1 的首个 Boss 会获得 20% 入门血量减免，但仍保留原本的分数收益；后续 Boss 和更高世界等级不受影响。Boss Rush 之前若场上方块被全部清空，系统会立即在顶部补充一整排方块。
 
-游戏已经预留独立的“世界等级”长期成长轴。世界等级从 1 开始且没有玩法等级上限；它通过可调幂函数分别提高普通敌人血量、Boss 额外血量、分数收益和额外收集箱期望数量，不会提高方块下降速度，也不会改变开箱品质权重。世界等级在一局开始后锁定，局外成长或转生系统以后只需调用 `scene.setWorldLevel(level)` / `scene.increaseWorldLevel(amount)`，无需改动战斗系统。
+游戏包含独立的“世界等级”长期成长轴。初始解锁 W1；在当前最高世界成功击杀第 7 个 Boss 后永久解锁下一世界，重复挑战较低世界不会越级解锁。开始界面可在已解锁范围内选择本局世界，选择与最高解锁进度保存在浏览器 `localStorage`，对局开始后锁定。世界等级没有玩法上限，并通过可调幂函数分别提高普通敌人血量、Boss 额外血量、分数收益和额外收集箱期望数量，不会提高方块下降速度，也不会改变开箱品质权重。
 
 在线游玩：
 
@@ -239,6 +239,6 @@ Boss 被击杀时不再直接提供收集品，而是默认掉落 1 个收集箱
 - **UI/成就/存档**：订阅事件总线，避免把平台能力写进物理或实体代码。
 - **多球**：物理层已经按球集合运行；主球用 `ballFactory.createPrimary()`，分裂等衍生小球只用 `ballFactory.createDerived()`。
 
-现有事件包括 `game:started`、`game:stats`、`game:lost`、`game:settled`、`game:finished`、`world-level:changed`、`leaderboard:run-submitted`、`leaderboard:run-submit-failed`、`collectible:changed`、`collectible:chests-changed`、`collectible:boss-chests`、`collectible:chest-opened`、`paddle-style:changed`、`ball:launched`、`ball:collectible-extra-shot`、`ball:experience`、`ball:loadout-changed`、`ball:split`、`ball:exploded`、`ball:lightning-chain`、`ball:lightning-strike`、`ball:lightning-echo`、`ball:navigation-return`、`ball:bounce`、`ball:lost`、`upgrade:offered`、`upgrade:selected`、`upgrade:auto-changed`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`brick:wave-refilled`、`boss:wave`、`boss:rush-next-scheduled`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
+现有事件包括 `game:started`、`game:stats`、`game:lost`、`game:settled`、`game:finished`、`world-level:changed`、`world-level:selected`、`world-level:unlocked`、`leaderboard:run-submitted`、`leaderboard:run-submit-failed`、`collectible:changed`、`collectible:chests-changed`、`collectible:boss-chests`、`collectible:chest-opened`、`paddle-style:changed`、`ball:launched`、`ball:collectible-extra-shot`、`ball:experience`、`ball:loadout-changed`、`ball:split`、`ball:exploded`、`ball:lightning-chain`、`ball:lightning-strike`、`ball:lightning-echo`、`ball:navigation-return`、`ball:bounce`、`ball:lost`、`upgrade:offered`、`upgrade:selected`、`upgrade:auto-changed`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`brick:wave-refilled`、`boss:wave`、`boss:defeated`、`boss:rush-next-scheduled`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
 
 开发控制台可通过 `window.breakout.engine` 与 `window.breakout.scene` 检查运行状态或挂载临时实验代码。

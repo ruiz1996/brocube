@@ -246,6 +246,37 @@ button { font: inherit; }
 .game-overlay h1 { margin: 0; font-size: clamp(31px, 5vw, 54px); line-height: 1; letter-spacing: -.05em; text-shadow: 0 0 34px rgba(85,232,255,.12); }
 .game-overlay > p:nth-of-type(2) { max-width: 420px; margin: 17px 0 26px; color: #8d99b5; font-size: 14px; line-height: 1.7; }
 
+.world-selector {
+  width: min(310px, 100%);
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 10px;
+  margin: -8px 0 18px;
+  padding: 9px;
+  background: rgba(9, 17, 37, .88);
+  border: 1px solid rgba(139, 124, 255, .32);
+  border-radius: 10px;
+  box-shadow: 0 0 24px rgba(139, 124, 255, .08);
+}
+.world-selector.is-hidden { display: none; }
+.world-selector-button {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  color: var(--cyan);
+  background: rgba(85, 232, 255, .07);
+  border: 1px solid rgba(85, 232, 255, .28);
+  border-radius: 8px;
+  font-size: 20px;
+  cursor: pointer;
+}
+.world-selector-button:disabled { color: #4e5b77; background: rgba(53, 65, 92, .08); border-color: rgba(109, 127, 166, .14); cursor: not-allowed; }
+.world-selector-copy { display: flex; min-width: 0; flex-direction: column; align-items: center; gap: 2px; }
+.world-selector-copy span { color: #7f8cac; font: 700 7px 'Space Mono', monospace; letter-spacing: .18em; }
+.world-selector-copy strong { color: #c5baff; font: 700 18px 'Space Mono', monospace; }
+.world-selector-copy small { overflow: hidden; max-width: 100%; color: #7e8ca8; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+
 .primary-button {
   display: flex;
   align-items: center;
@@ -372,10 +403,11 @@ button { font: inherit; }
 }
 
 .collectible-library.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
-.collectible-library-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
+.collectible-library-header { display: flex; flex: 0 0 auto; align-items: flex-start; justify-content: space-between; gap: 15px; }
 .collectible-library-header h2 { margin: 0; font-size: 24px; letter-spacing: -.035em; }
 .collectible-library-copy { margin: 6px 0 10px; color: #8190ae; font-size: 10px; }
 .collectible-chest-vault {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr) auto;
   align-items: center;
@@ -398,6 +430,7 @@ button { font: inherit; }
 .collectible-chest-open { min-width: 82px; padding: 8px 10px; font-size: 9px; }
 .collectible-chest-open:disabled { opacity: .4; cursor: not-allowed; }
 .collectible-chest-reveal {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: 56px minmax(0, 1fr);
   align-items: center;
@@ -417,7 +450,7 @@ button { font: inherit; }
 .collectible-chest-reveal strong { color: #fff; font-size: 14px; }
 .collectible-chest-reveal small { color: #8593ad; font-size: 8px; }
 @keyframes chest-reveal { from { opacity: 0; transform: translateY(-6px) scale(.97); } }
-.collectible-filters { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto; scrollbar-width: none; }
+.collectible-filters { display: flex; flex: 0 0 auto; gap: 6px; min-height: 27px; margin-bottom: 10px; overflow-x: auto; scrollbar-width: none; }
 .collectible-filter {
   flex: 0 0 auto;
   padding: 6px 10px;
@@ -430,9 +463,11 @@ button { font: inherit; }
 }
 .collectible-filter.is-active { color: var(--cyan); border-color: rgba(85, 232, 255, .55); background: rgba(28, 58, 82, .72); }
 .collectible-library-list {
+  flex: 1 1 auto;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+  min-height: 0;
   padding-right: 3px;
   overflow-y: auto;
 }

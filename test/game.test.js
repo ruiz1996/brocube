@@ -12,6 +12,7 @@ import {
   clampWorldValue,
   normalizeWorldLevel,
 } from '../src/game/WorldLevel.js';
+import { WorldProgression } from '../src/game/WorldProgression.js';
 import { Brick } from '../src/game/entities/entities.js';
 import {
   BOSS_SHAPE_IDS,
@@ -2037,6 +2038,69 @@ test('世界等级在局外可调整，开始对局后锁定并写入快照', ()
   scene.settleRun();
   assert.equal(scene.setWorldLevel(99), true);
   assert.equal(scene.snapshot().worldLevel, 99);
+  scene.exit();
+});
+
+test('世界等级需要击败当前最高世界的第七个Boss逐级解锁并持久化', () => {
+  const values = new Map();
+  const storage = {
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, value); },
+  };
+  const events = new EventBus();
+  const unlocks = [];
+  events.on('world-level:unlocked', (payload) => unlocks.push(payload));
+  const progression = new WorldProgression({ storage, events });
+
+  assert.deepEqual(progression.snapshot(), {
+    selectedLevel: 1,
+    unlockedLevel: 1,
+    unlockBossWave: 7,
+  });
+  assert.equal(progression.select(2), false);
+  assert.equal(progression.recordBossDefeat({ worldLevel: 1, bossWave: 6 }), null);
+  assert.equal(progression.recordBossDefeat({ worldLevel: 1, bossWave: 7 }).unlockedLevel, 2);
+  assert.equal(progression.select(2), true);
+  assert.equal(progression.recordBossDefeat({ worldLevel: 1, bossWave: 7 }), null);
+  assert.equal(progression.recordBossDefeat({ worldLevel: 2, bossWave: 7 }).unlockedLevel, 3);
+  assert.equal(unlocks.length, 2);
+
+  const restored = new WorldProgression({ storage });
+  assert.equal(restored.selectedLevel, 2);
+  assert.equal(restored.unlockedLevel, 3);
+});
+
+test('场景限制世界选择范围，并在击杀第七波Boss时解锁下一世界', () => {
+  const events = new EventBus();
+  const progression = new WorldProgression({ storage: null, events });
+  const scene = new BreakoutScene();
+  scene.worldProgression = progression;
+  scene.enter({
+    engine: { paused: false, setPaused(value) { this.paused = value; } },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+
+  assert.equal(scene.setWorldLevel(2), false);
+  scene.startNewGame();
+  const seventhBoss = new Brick({
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 60,
+    hitPoints: 1,
+    score: 0,
+    variant: 'boss',
+    bossWave: 7,
+  });
+  events.emit('brick:destroyed', { brick: seventhBoss });
+  assert.equal(progression.unlockedLevel, 2);
+  assert.equal(scene.worldLevel, 1);
+  scene.settleRun();
+  assert.equal(scene.setWorldLevel(2), true);
+  assert.equal(scene.worldLevel, 2);
   scene.exit();
 });
 

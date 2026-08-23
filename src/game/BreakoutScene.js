@@ -26,7 +26,9 @@ import { CollectibleChestSystem } from './collectibles/CollectibleChestSystem.js
 export class BreakoutScene {
   enter(context) {
     Object.assign(this, context);
-    this.worldLevel = normalizeWorldLevel(context.worldLevel);
+    this.worldLevel = normalizeWorldLevel(
+      context.worldLevel ?? this.worldProgression?.selectedLevel,
+    );
     this.collectibleRun = createCollectibleRunEffects();
     this.world = new World();
     this.ballDefinitions = createDefaultBallDefinitions();
@@ -116,6 +118,7 @@ export class BreakoutScene {
   setWorldLevel(level) {
     if (!['idle', 'lost', 'settled'].includes(this.state)) return false;
     const nextLevel = normalizeWorldLevel(level);
+    if (this.worldProgression && !this.worldProgression.select(nextLevel)) return false;
     if (nextLevel === this.worldLevel) return true;
     this.worldLevel = nextLevel;
     const snapshot = this.snapshot();
@@ -181,6 +184,12 @@ export class BreakoutScene {
     this.events.emit('game:stats', this.snapshot());
     this.upgrades.check(this.score);
     this.collectibleDrops.handleBrickDestroyed(brick);
+    if (brick.variant === 'boss') {
+      const bossWave = brick.bossWave ?? this.brickField.bossWaveCount;
+      const defeated = { brick, bossWave, worldLevel: this.worldLevel };
+      this.events.emit('boss:defeated', defeated);
+      this.worldProgression?.recordBossDefeat(defeated);
+    }
     this.brickField.handleBossDestroyed(brick);
   }
 

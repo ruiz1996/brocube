@@ -58,6 +58,7 @@ export const GAME = Object.freeze({
   worldLevel: {
     // 世界等级本身没有玩法上限；下列幂函数参数可以独立调节长期曲线。
     defaultLevel: 1,
+    unlockBossWave: 7,
     enemyHealthCoefficient: 0.18,
     enemyHealthExponent: 1.35,
     bossHealthCoefficient: 0.06,

@@ -353,6 +353,7 @@ export class BrickFieldSystem {
       ),
       variant: 'boss',
       bossShape,
+      bossWave: this.bossWaveCount,
       points: bossPolygon,
     });
 
@@ -420,6 +421,7 @@ export class BrickFieldSystem {
       ),
       variant: options.variant ?? 'normal',
       bossShape: options.bossShape ?? null,
+      bossWave: options.bossWave ?? null,
     }));
   }
 }
