@@ -130,7 +130,9 @@ export class UpgradeSystem {
   get fireInterval() {
     return Math.max(
       GAME.upgrade.minimumFireInterval,
-      GAME.autoFireInterval * GAME.upgrade.rapidFireMultiplier ** this.levels.rapidFire,
+      GAME.autoFireInterval
+        * (this.scene.collectibleRun?.fireIntervalMultiplier ?? 1)
+        * GAME.upgrade.rapidFireMultiplier ** this.levels.rapidFire,
     );
   }
 
@@ -152,7 +154,10 @@ export class UpgradeSystem {
 
   get topImpactDamageMultiplier() {
     return 1 + (GAME.upgrade.topLaunchSpeedMultiplier - 1)
-      * GAME.upgrade.topImpactDamageScalePerLevel * this.levels.topImpact;
+      * (
+        GAME.upgrade.topImpactDamageScalePerLevel * this.levels.topImpact
+        + (this.scene.collectibleRun?.topSpeedDamageScaleBonus ?? 0)
+      );
   }
 
   get newBallLives() {
@@ -162,12 +167,14 @@ export class UpgradeSystem {
 
   get voidOrbiterAngularSpeed() {
     return GAME.upgrade.voidOrbiterAngularSpeed
-      * GAME.upgrade.voidOrbiterSpeedMultiplierPerLevel ** this.levels.voidOrbitSpeed;
+      * GAME.upgrade.voidOrbiterSpeedMultiplierPerLevel ** this.levels.voidOrbitSpeed
+      * (this.scene.collectibleRun?.voidOrbitSpeedMultiplier ?? 1);
   }
 
   get voidOrbitRadius() {
     return GAME.upgrade.voidOrbitRadius
-      * GAME.upgrade.voidOrbitRadiusMultiplierPerLevel ** this.levels.voidOrbitRadius;
+      * GAME.upgrade.voidOrbitRadiusMultiplierPerLevel ** this.levels.voidOrbitRadius
+      * (this.scene.collectibleRun?.voidOrbitRadiusMultiplier ?? 1);
   }
 
   get navigationStrength() {
@@ -275,13 +282,21 @@ export class UpgradeSystem {
       }
     } else if (id === 'ballDamage') {
       for (const ball of this.scene.world.all('ball')) {
-        if (ball.contactDamage !== false) addBallBaseDamage(ball, GAME.upgrade.ballDamagePerLevel);
+        addBallBaseDamage(
+          ball,
+          this.scene.collectibleRun.scaleBaseDamageGain(
+            GAME.upgrade.ballDamagePerLevel,
+            ball,
+          ),
+        );
       }
     } else if (id === 'paddleLength') {
       const paddle = this.scene.world.all('paddle').find(({ role }) => role === 'primary');
       if (paddle) {
         const center = paddle.x + paddle.width / 2;
-        paddle.width = GAME.paddle.width * GAME.upgrade.paddleLengthMultiplierPerLevel ** this.levels.paddleLength;
+        paddle.width = GAME.paddle.width
+          * (this.scene.collectibleRun?.paddleWidthMultiplier ?? 1)
+          * GAME.upgrade.paddleLengthMultiplierPerLevel ** this.levels.paddleLength;
         paddle.x = Math.max(14, Math.min(GAME.width - paddle.width - 14, center - paddle.width / 2));
       }
     } else if (id === 'doublePaddle') {
@@ -346,6 +361,9 @@ export class UpgradeSystem {
           Object.assign(impact.config, {
             chance: this.blastImpactChance,
             damage: blast?.config.damage ?? GAME.upgrade.blastDamage,
+            baseDamageScale: blast?.config.baseDamageScale
+              ?? GAME.upgrade.blastDamage / GAME.combat.baseDamage,
+            flatDamageBonus: blast?.config.flatDamageBonus ?? 0,
             radius: blast?.config.radius ?? GAME.upgrade.blastRadius,
           });
         }
@@ -489,7 +507,7 @@ export class UpgradeSystem {
         name: '攻击强化',
         level: this.levels.ballDamage,
         maxLevel: GAME.upgrade.ballDamageMaxLevel,
-        description: `球的直接碰撞伤害额外 +${this.ballDamageBonus} → +${this.ballDamageBonus + GAME.upgrade.ballDamagePerLevel}；不影响爆炸、闪电链和虚空子球`,
+        description: `所有球的基础伤害额外 +${this.ballDamageBonus} → +${this.ballDamageBonus + GAME.upgrade.ballDamagePerLevel}；同步强化直接碰撞、爆炸、闪电链和虚空子球`,
       },
       {
         id: 'ballLives',
@@ -518,7 +536,7 @@ export class UpgradeSystem {
         name: '爆裂核心',
         level: this.levels.blastLaunch,
         maxLevel: GAME.upgrade.blastLaunchMaxLevel,
-        description: `加入特殊球池：与普通球等概率互相替代；每 ${GAME.upgrade.blastInterval.toFixed(1)} 秒对 ${GAME.upgrade.blastRadius} 范围内方块造成 ${GAME.upgrade.blastDamage} 点伤害`,
+        description: `加入特殊球池：与普通球等概率互相替代；每 ${GAME.upgrade.blastInterval.toFixed(1)} 秒对 ${GAME.upgrade.blastRadius} 范围内方块造成球基础伤害 ${Math.round(GAME.upgrade.blastDamage / GAME.combat.baseDamage * 100)}% 的伤害`,
       },
       {
         id: 'blastCooldown',
@@ -540,7 +558,7 @@ export class UpgradeSystem {
         name: '虚空双星',
         level: this.levels.voidOrbit,
         maxLevel: GAME.upgrade.voidOrbitMaxLevel,
-        description: `加入特殊球池：与普通球等概率互相替代；核心负责反弹，两颗环绕子球各造成 ${GAME.upgrade.voidOrbiterDamage} 点伤害`,
+        description: `加入特殊球池：与普通球等概率互相替代；核心负责反弹，两颗环绕子球各造成球基础伤害 ${Math.round(GAME.upgrade.voidOrbiterDamage / GAME.combat.baseDamage * 100)}% 的伤害`,
       },
       {
         id: 'voidOrbitSpeed',
@@ -584,7 +602,7 @@ export class UpgradeSystem {
         name: '链式闪电',
         level: this.levels.lightning,
         maxLevel: GAME.upgrade.lightningMaxLevel,
-        description: `加入特殊球池：与普通球等概率互相替代；碰撞不造成常规伤害，闪电命中当前方块并弹射 ${GAME.upgrade.lightningAdditionalTargets} 个额外目标`,
+        description: `加入特殊球池：与普通球等概率互相替代；碰撞不造成常规伤害，闪电造成球基础伤害 ${Math.round(GAME.upgrade.lightningDamage / GAME.combat.baseDamage * 100)}% 的伤害并弹射 ${GAME.upgrade.lightningAdditionalTargets} 个额外目标`,
       },
       {
         id: 'lightningJumps',

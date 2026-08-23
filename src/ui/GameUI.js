@@ -8,12 +8,22 @@ export function calculateUpgradeProgress({ score, progressStart, nextScore }) {
   return { earned, required, ratio: earned / required };
 }
 
+export function formatWorldLevel(level) {
+  const normalized = Math.max(1, Math.floor(Number(level) || 1));
+  if (normalized < 10000) return `W${normalized}`;
+  return `W${new Intl.NumberFormat('zh-CN', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(normalized)}`;
+}
+
 export class GameUI {
   constructor(engine, scene, audio) {
     this.engine = engine;
     this.scene = scene;
     this.audio = audio;
     this.score = document.querySelector('#score-value');
+    this.worldLevel = document.querySelector('#world-level-value');
     this.balls = document.querySelector('#balls-value');
     this.shot = document.querySelector('#shot-value');
     this.upgradeProgressTrack = document.querySelector('#upgrade-progress-track');
@@ -116,12 +126,37 @@ export class GameUI {
     events.on('upgrade:auto-changed', () => {
       if (!this.upgradeLibrary.classList.contains('is-hidden')) this.#renderUpgradeLibrary();
     });
+    events.on('collectible:boss-chests', ({
+      chestCount, worldChests, starChartChests,
+    }) => {
+      this.audio.play(660, .18, .035);
+      const bonuses = [
+        worldChests > 0 ? `世界等级 +${worldChests}` : null,
+        starChartChests > 0 ? `远征星图 +${starChartChests}` : null,
+      ].filter(Boolean);
+      this.#showUpgradeToast({
+        name: `获得 ${chestCount} 个收集箱`,
+        kicker: chestCount > 1 ? 'BONUS CACHES ACQUIRED' : 'BOSS CACHE ACQUIRED',
+        detail: bonuses.length > 0 ? bonuses.join(' · ') : '前往收集品图鉴开启',
+      });
+    });
+    events.on('collectible:chest-opened', () => this.audio.play(760, .2, .03));
+    events.on('boss:wave', ({ wave, bossRush, bossRushHealthMultiplier }) => {
+      if (!bossRush) return;
+      this.audio.play(92, .32, .04);
+      this.#showUpgradeToast({
+        name: `BOSS RUSH · WAVE ${wave}`,
+        kicker: wave === GAME.brick.bossRushStartWave ? 'BOSS RUSH ENGAGED' : 'NEXT BOSS INBOUND',
+        detail: `Boss Rush 额外生命倍率 ×${bossRushHealthMultiplier}`,
+      });
+    });
     events.on('combo:changed', (combo) => this.#updateCombo(combo));
     events.on('combo:ended', () => this.#hideCombo());
   }
 
-  updateStats({ score, balls, nextShot, upgradeProgressStart = 0, nextUpgradeScore }) {
+  updateStats({ score, worldLevel = 1, balls, nextShot, upgradeProgressStart = 0, nextUpgradeScore }) {
     this.score.textContent = String(Math.round(score)).padStart(6, '0');
+    this.worldLevel.textContent = formatWorldLevel(worldLevel);
     this.balls.textContent = String(balls).padStart(2, '0');
     this.shot.textContent = `${Math.max(0, nextShot).toFixed(1)}s`;
     const progress = calculateUpgradeProgress({
@@ -166,12 +201,14 @@ export class GameUI {
     this.upgradeOverlay.setAttribute('aria-hidden', 'true');
   }
 
-  #showUpgradeToast({ name, level, maxLevel, automatic }) {
+  #showUpgradeToast({ name, level, maxLevel, automatic, kicker = null, detail = null }) {
     if (!this.upgradeToast) return;
     const maximum = Number.isFinite(maxLevel) ? ` / ${String(maxLevel).padStart(2, '0')}` : '';
-    this.upgradeToastKicker.textContent = automatic ? 'AUTO UPGRADE APPLIED' : 'UPGRADE APPLIED';
+    this.upgradeToastKicker.textContent = kicker
+      ?? (automatic ? 'AUTO UPGRADE APPLIED' : 'UPGRADE APPLIED');
     this.upgradeToastName.textContent = name;
-    this.upgradeToastLevel.textContent = `已升至 LV.${String(level).padStart(2, '0')}${maximum}`;
+    this.upgradeToastLevel.textContent = detail
+      ?? `已升至 LV.${String(level).padStart(2, '0')}${maximum}`;
     this.upgradeToast.classList.remove('is-hidden', 'is-pulsing');
     void this.upgradeToast.offsetWidth;
     this.upgradeToast.classList.add('is-pulsing');

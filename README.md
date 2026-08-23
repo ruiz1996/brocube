@@ -2,7 +2,9 @@
 
 一个零依赖、可扩展的 Canvas 无限生存打方块游戏。游戏采用 600×900 的竖向战场，适配手机竖屏并保留桌面键盘操作。挡板每 3 秒自动发射能量球；球掉出底部会被回收，但不会导致失败。随机凸多边形方块会持续生成并缓慢下压，任意方块触碰底部防线即游戏结束。
 
-每存活 3 分钟会生成一轮 Boss 波次，其中包含 1 个大型高血量 Boss 与 6 个小型护卫方块；范围伤害可以同时处理护卫并削减 Boss。若场上方块被全部清空，系统会立即在顶部补充一整排 9 个方块，保证战斗不会出现空档。
+前六轮每存活 3 分钟会生成一轮 Boss 波次，其中包含 1 个大型高血量 Boss 与若干小型护卫方块；范围伤害可以同时处理护卫并削减 Boss。第七轮开始进入 Boss Rush：停止普通随机补怪，击杀当前 Boss 后 6 秒刷新下一轮 Boss 和护卫，第 7/8/9…轮额外获得 5/25/125…倍 Boss Rush 血量倍率。世界等级 1 的首个 Boss 会获得 20% 入门血量减免，但仍保留原本的分数收益；后续 Boss 和更高世界等级不受影响。Boss Rush 之前若场上方块被全部清空，系统会立即在顶部补充一整排方块。
+
+游戏已经预留独立的“世界等级”长期成长轴。世界等级从 1 开始且没有玩法等级上限；它通过可调幂函数分别提高普通敌人血量、Boss 额外血量、分数收益和额外收集箱期望数量，不会提高方块下降速度，也不会改变开箱品质权重。世界等级在一局开始后锁定，局外成长或转生系统以后只需调用 `scene.setWorldLevel(level)` / `scene.increaseWorldLevel(amount)`，无需改动战斗系统。
 
 在线游玩：
 
@@ -25,7 +27,7 @@
 - 玩家第一次进入时填写名称；名称允许重复，后台使用 Supabase 匿名用户 UUID 区分玩家。
 - 界面会附加四位玩家编号，例如 `张三 #8F21`，方便区分同名玩家。
 - 同一浏览器会自动恢复匿名身份；清除网站数据或更换设备后会成为新玩家。未来可在同一 UUID 上继续增加账号绑定与局外成长。
-- 每局失败后自动保存成绩，每名玩家只以个人最高分参与排名。
+- 每局失败后自动保存成绩，每名玩家只以个人最高分参与排名；不同世界等级仍在同一榜单按分数统一排名，并展示该最高分对应的世界等级。
 - 正式版和 Beta 使用同一套身份服务，但根据页面路由进入不同榜单。
 
 未配置 Supabase 时，系统会自动使用本机身份和本机最高分榜，不影响游戏启动。启用全球榜需要：
@@ -69,8 +71,10 @@ src/
 │  ├─ BreakoutScene.js   # 本玩法的编排与状态机
 │  ├─ BreakoutRenderer.js# 纯渲染
 │  ├─ balls/             # 球定义、工厂、伤害/碰撞行为与渲染注册表
+│  ├─ collectibles/      # 收集品目录、等级存档与挡板装备状态
 │  ├─ emitters/          # 发射位置和方向策略（挡板、顶部等）
 │  ├─ entities/          # 球、挡板、砖块、粒子
+│  ├─ paddles/           # 挡板造型注册与 Canvas 绘制器
 │  ├─ systems/           # 移动、战斗结算、自动发球、生成、下压与特效
 │  └─ plugins/           # 可插拔玩法示例
 └─ ui/                   # DOM 界面，不侵入游戏逻辑
@@ -90,6 +94,15 @@ src/
 - `BallRendererRegistry` 按球定义选择主体绘制器，并支持可叠加的 underlay / overlay 视觉层。
 - `BallFusionRegistry` 按组件 ID 注册融合配方，统一组合发射器、球定义、数值倍率、能力配置、特征标签和视觉层。
 - `BallTraits` 保存稳定的能力标签；强化通过 `ball.hasTrait()` 判断归属，因此融合球可以同时继承多套强化。
+
+特殊球的衍生伤害统一从球当前的 `baseDamage` 动态计算。爆炸、碰撞爆炸、闪电链、额外雷击、虚空子球以及融合球载荷只保存基础伤害倍率和能力专属的固定加值，不再保存彼此独立的最终伤害。因此攻击强化、球等级成长和未来收集品只要修改球的基础伤害，就会同步强化全部关联能力。
+
+```text
+特殊能力最终伤害
+= round((球当前基础伤害 × 能力基础倍率 + 能力等级额外伤害) × 情境倍率)
+```
+
+不造成常规碰撞伤害的闪电球和虚空核心仍然持有并成长基础伤害，只是在碰撞结算时跳过直接伤害。
 
 衍生球的限制被集中在 `BallFactory.createDerived()`：它必定使用 `basic` 定义、1 点动能伤害、普通反弹、无命中特效，并使用更小的半径。分裂策略也只能通过此入口生成衍生球，因此特殊主球的闪电、穿透或再次分裂不会被继承。
 
@@ -158,6 +171,7 @@ scene.registerBallFusion('top-void', {
 
 - **新砖块**：扩展 `Brick` 的数据字段或替换 `BrickFieldSystem` 的多边形生成器，由独立系统监听 `brick:hit` 处理。
 - **血量曲线**：编辑 `config.js` 中的 `brick.healthFormula`。期望血量由基础值、时间幂函数、分数幂函数相加得到，没有固定上限；`randomSpread` 控制同一时刻方块之间的随机差异。
+- **世界等级曲线**：编辑 `config.js` 中的 `worldLevel`。四条曲线使用 `倍率 = (1 + coefficient × (世界等级 - 1)) ^ exponent`，彼此独立且没有等级表上限；极端输入只会在 JavaScript 安全整数边界进行数值保护。世界等级修正不会参与砖块下降速度计算。
 
 ```text
 期望血量 = baseHp
@@ -181,7 +195,7 @@ scene.registerBallFusion('top-void', {
 
 - **发射类**：高速装填最多 5 级；分裂发射最多 10 级，满级后解锁二连发，使每轮两颗球分别从普通球与全部已解锁特殊球中独立抽取；五连速射每级增加 5% 触发率，最多 3 级。
 - **挡板与生存类**：双重挡板最多 3 级，副挡板依次获得主挡板 33%、66%、100% 的宽度；生命增幅最多 2 级；延展力场最多 5 级；底线回响最多 3 级。
-- **数值类**：动能超频最多 3 级；攻击强化最多 99 级且以低权重进入候选池。
+- **数值类**：动能超频最多 3 级；攻击强化最多 99 级且以低权重进入候选池，并会通过球基础伤害同步提高直接碰撞、爆炸、闪电链和虚空子球伤害。
 
 玩家可以在“玩家与排行榜”面板中点击“结束本局并上传”，主动结束当前对局并立即保存成绩，无需等待方块突破防线。按钮会在非对局状态下禁用，提交前会再次确认。
 - **天顶增援**：与普通球等概率替代发射；天顶续航提高触底保留率，天顶冲击按其 200% 发射速度逐级转化碰撞伤害，两项均最多 3 级。
@@ -192,6 +206,30 @@ scene.registerBallFusion('top-void', {
 
 所有数值和等级上限都集中在 `config.js` 的 `GAME.upgrade`。
 
+## 收集品图鉴
+
+顶部菱形按钮会打开收集品图鉴。当前目录包含 19 件数值收集品和 4 件史诗挡板外观，共 23 件；可按普通、稀有、史诗、传说及挡板类型筛选。每件收集品都有独立名称、矢量图形、品质色、效果说明、当前等级与上限。两个无上限基础伤害收集品是彼此独立的成长槽位。“升格记忆核”为史诗成长收集品，每级使球获得的升级经验增加 5%，最多 10 级。
+
+收集品目录位于 `src/game/collectibles/CollectibleCatalog.js`，本地等级和已装备挡板由 `CollectibleInventory` 保存到 `localStorage`。有限等级会在目录上限自动封顶，无限等级使用安全整数保护；获得和换装分别广播 `collectible:changed` 与 `paddle-style:changed`。
+
+所有战斗效果采用开局快照。点击开始时，`CollectibleRunEffects` 只读取一次当前库存并计算固定修正；当局 Boss 新掉落的收集品会立刻写入永久库存和图鉴，但不会改变当前对局，下一局开始时才会重新计算。基础伤害采用“固定伤害相加后再计算百分比”的顺序，最终仍通过整数伤害规范化：
+
+```text
+当局基础伤害 = round(
+  (球定义伤害 + 局内攻击强化 + 稀有/史诗固定伤害)
+  × 全局百分比伤害
+  × 对应特殊球百分比伤害
+)
+```
+
+发射间隔缩短采用加法合计后乘入局内高速装填；底线保留与底线回响、天顶续航依次独立判定；挡板反弹增伤只保存一层并在下一次方块碰撞时消耗。球升级改用可带小数的经验值，原本的 3/9 击杀阈值不变，因此经验倍率和额外升级进度可以共同生效。
+
+Boss 被击杀时不再直接提供收集品，而是默认掉落 1 个收集箱。箱子会持久保存，玩家可在收集品图鉴中手动开启；每个箱子按固定的普通 60、稀有 28、史诗 10、传说 2 的基础权重抽取一件尚未满级的收集品。世界等级不会改变这组品质权重。
+
+世界等级改为提供“额外箱子期望数量”。期望值的整数部分是必定获得的额外箱子，小数部分作为再多掉 1 个箱子的概率；因此该曲线可以随无限世界等级持续成长。“远征星图”的额外箱子判定在这之后单独执行，两种来源互不覆盖。同一局开箱获得远征星图仍不会改变本局快照概率。
+
+4 种史诗挡板分别为“晶翼拦截器”“断星月刃”“棱镜方舟”和“虚空脊刃”。它们只替换 Canvas 绘制方式，不改变挡板碰撞体和数值，因此不会因外观造成手感差异。未获得时可以在图鉴查看造型，获得后可装备；新增外观只需在 `PaddleSkins.js` 注册绘制器并在收集品目录增加一条 `category: 'paddle'` 记录。
+
 ## 连击计分
 
 击杀方块后会开启 3 秒连击窗口，每次后续击杀都会刷新窗口。第一杀为基础分，第二杀起每次连击增加 0.1 倍得分，默认最高 3 倍。窗口时长、每杀倍率和倍率上限位于 `config.js` 的 `GAME.combo`。
@@ -201,6 +239,6 @@ scene.registerBallFusion('top-void', {
 - **UI/成就/存档**：订阅事件总线，避免把平台能力写进物理或实体代码。
 - **多球**：物理层已经按球集合运行；主球用 `ballFactory.createPrimary()`，分裂等衍生小球只用 `ballFactory.createDerived()`。
 
-现有事件包括 `game:started`、`game:stats`、`game:lost`、`game:settled`、`game:finished`、`leaderboard:run-submitted`、`leaderboard:run-submit-failed`、`ball:launched`、`ball:loadout-changed`、`ball:split`、`ball:exploded`、`ball:lightning-chain`、`ball:lightning-strike`、`ball:navigation-return`、`ball:bounce`、`ball:lost`、`upgrade:offered`、`upgrade:selected`、`upgrade:auto-changed`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`brick:wave-refilled`、`boss:wave`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
+现有事件包括 `game:started`、`game:stats`、`game:lost`、`game:settled`、`game:finished`、`world-level:changed`、`leaderboard:run-submitted`、`leaderboard:run-submit-failed`、`collectible:changed`、`collectible:chests-changed`、`collectible:boss-chests`、`collectible:chest-opened`、`paddle-style:changed`、`ball:launched`、`ball:collectible-extra-shot`、`ball:experience`、`ball:loadout-changed`、`ball:split`、`ball:exploded`、`ball:lightning-chain`、`ball:lightning-strike`、`ball:lightning-echo`、`ball:navigation-return`、`ball:bounce`、`ball:lost`、`upgrade:offered`、`upgrade:selected`、`upgrade:auto-changed`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`brick:wave-refilled`、`boss:wave`、`boss:rush-next-scheduled`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
 
 开发控制台可通过 `window.breakout.engine` 与 `window.breakout.scene` 检查运行状态或挂载临时实验代码。

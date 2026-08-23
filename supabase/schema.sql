@@ -16,8 +16,13 @@ create table if not exists public.game_runs (
   channel text not null check (channel in ('stable', 'beta')),
   game_version text not null,
   upgrades jsonb not null default '{}'::jsonb,
+  world_level bigint not null default 1 check (world_level >= 1),
   created_at timestamptz not null default now()
 );
+
+-- 兼容已经执行过旧版 schema.sql 的项目；历史成绩按世界等级 1 处理。
+alter table public.game_runs
+  add column if not exists world_level bigint not null default 1 check (world_level >= 1);
 
 create index if not exists game_runs_leaderboard_idx
   on public.game_runs (channel, score desc, created_at asc);
@@ -52,7 +57,10 @@ create policy "Players can submit their own runs"
   to authenticated
   with check ((select auth.uid()) = user_id);
 
-create or replace function public.get_leaderboard(
+-- 返回列新增 world_level 时 PostgreSQL 不允许直接改变旧函数的返回类型。
+drop function if exists public.get_leaderboard(text, integer);
+
+create function public.get_leaderboard(
   p_channel text,
   p_limit integer default 20
 )
@@ -61,6 +69,7 @@ returns table (
   player_code text,
   display_name text,
   score bigint,
+  world_level bigint,
   duration_seconds numeric,
   created_at timestamptz,
   is_current boolean
@@ -74,6 +83,7 @@ as $$
     select distinct on (runs.user_id)
       runs.user_id,
       runs.score,
+      runs.world_level,
       runs.duration_seconds,
       runs.created_at
     from public.game_runs as runs
@@ -86,6 +96,7 @@ as $$
       upper(substr(replace(best.user_id::text, '-', ''), 1, 4)) as player_code,
       profile.display_name,
       best.score,
+      best.world_level,
       best.duration_seconds,
       best.created_at
     from personal_bests as best
@@ -96,6 +107,7 @@ as $$
     ranked.player_code,
     ranked.display_name,
     ranked.score,
+    ranked.world_level,
     ranked.duration_seconds,
     ranked.created_at,
     ranked.user_id = (select auth.uid()) as is_current

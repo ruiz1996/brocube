@@ -1,4 +1,5 @@
 import { World } from '../core/Entity.js';
+import { GAME } from './config.js';
 import { Paddle } from './entities/entities.js';
 import { PaddleSystem } from './systems/PaddleSystem.js';
 import { AutoFireSystem } from './systems/AutoFireSystem.js';
@@ -17,10 +18,16 @@ import { createDefaultBallEmitters } from './emitters/BallEmitterRegistry.js';
 import { createDefaultBallBehaviors } from './balls/BallBehaviorRegistry.js';
 import { createDefaultBallRenderers } from './balls/BallRendererRegistry.js';
 import { createDefaultBallFusions } from './balls/BallFusionRegistry.js';
+import { calculateWorldLevelModifiers, normalizeWorldLevel } from './WorldLevel.js';
+import { createCollectibleRunEffects } from './collectibles/CollectibleRunEffects.js';
+import { CollectibleDropSystem } from './collectibles/CollectibleDropSystem.js';
+import { CollectibleChestSystem } from './collectibles/CollectibleChestSystem.js';
 
 export class BreakoutScene {
   enter(context) {
     Object.assign(this, context);
+    this.worldLevel = normalizeWorldLevel(context.worldLevel);
+    this.collectibleRun = createCollectibleRunEffects();
     this.world = new World();
     this.ballDefinitions = createDefaultBallDefinitions();
     this.ballFactory = new BallFactory(this.ballDefinitions);
@@ -37,6 +44,8 @@ export class BreakoutScene {
     this.guidance = new GuidanceSystem(this);
     this.orbiterDamage = new OrbiterDamageSystem(this);
     this.brickField = new BrickFieldSystem(this);
+    this.collectibleDrops = new CollectibleDropSystem(this);
+    this.collectibleChests = new CollectibleChestSystem(this);
     this.systems = [
       new PaddleSystem(this),
       this.autoFire,
@@ -62,6 +71,7 @@ export class BreakoutScene {
     this.score = 0;
     this.state = 'playing';
     this.statsTimer = 0;
+    this.collectibleRun = createCollectibleRunEffects(this.collectibles?.snapshot());
     this.#resetWorld();
     this.engine.setPaused(false);
     this.events.emit('game:started', this.snapshot());
@@ -101,6 +111,24 @@ export class BreakoutScene {
 
   chooseUpgrade(id) { return this.upgrades.choose(id); }
 
+  openCollectibleChest() { return this.collectibleChests.open(); }
+
+  setWorldLevel(level) {
+    if (!['idle', 'lost', 'settled'].includes(this.state)) return false;
+    const nextLevel = normalizeWorldLevel(level);
+    if (nextLevel === this.worldLevel) return true;
+    this.worldLevel = nextLevel;
+    const snapshot = this.snapshot();
+    this.events.emit('world-level:changed', snapshot);
+    this.events.emit('game:stats', snapshot);
+    return true;
+  }
+
+  increaseWorldLevel(amount = 1) {
+    const increase = Math.max(1, Math.floor(Number(amount) || 1));
+    return this.setWorldLevel(this.worldLevel + increase);
+  }
+
   registerBallFusion(id, recipe) {
     this.ballFusions.register(id, recipe);
     this.events.emit('ball:fusion-registered', { id, recipe });
@@ -121,6 +149,11 @@ export class BreakoutScene {
       balls: this.world.all('ball').length,
       nextShot: Math.max(0, this.autoFire?.timeUntilShot ?? 0),
       elapsed: this.brickField?.elapsed ?? 0,
+      bossWave: this.brickField?.bossWaveCount ?? 0,
+      bossRush: this.brickField?.bossRushActive ?? false,
+      worldLevel: this.worldLevel,
+      worldLevelModifiers: calculateWorldLevelModifiers(this.worldLevel),
+      collectibleRun: this.collectibleRun?.snapshot() ?? null,
       upgrades: { ...this.upgrades.levels },
       upgradeProgressStart: this.upgrades.progressStartScore,
       nextUpgradeScore: this.upgrades.nextScore,
@@ -131,8 +164,10 @@ export class BreakoutScene {
 
   #resetWorld() {
     this.world.clear();
-    this.world.add(new Paddle());
     this.upgrades.reset();
+    this.world.add(new Paddle({
+      width: GAME.paddle.width * (this.collectibleRun?.paddleWidthMultiplier ?? 1),
+    }));
     this.autoFire.reset();
     this.brickField.reset();
     this.world.flush();
@@ -145,6 +180,8 @@ export class BreakoutScene {
     this.score += brick.score * multiplier;
     this.events.emit('game:stats', this.snapshot());
     this.upgrades.check(this.score);
+    this.collectibleDrops.handleBrickDestroyed(brick);
+    this.brickField.handleBossDestroyed(brick);
   }
 
   #onBrickBreached({ brick, elapsed }) {

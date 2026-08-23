@@ -90,6 +90,7 @@ function voidPayload(scene, type, overrides = {}) {
     const blastConfig = {
       radius: GAME.upgrade.blastRadius,
       damage: GAME.upgrade.blastDamage,
+      baseDamageScale: GAME.upgrade.blastDamage / GAME.combat.baseDamage,
       damageType: 'explosive',
       color: '#ff4fa3',
       secondaryColor: '#9b6cff',
@@ -123,6 +124,7 @@ function voidPayload(scene, type, overrides = {}) {
         id: 'chain-lightning',
         config: {
           damage: GAME.upgrade.lightningDamage,
+          baseDamageScale: GAME.upgrade.lightningDamage / GAME.combat.baseDamage,
           additionalTargets: upgrades?.lightningAdditionalTargets
             ?? GAME.upgrade.lightningAdditionalTargets,
           range: GAME.upgrade.lightningRange,
@@ -142,6 +144,7 @@ function voidOrbitOverride(scene, payload, visual) {
     angularSpeed: scene?.upgrades?.voidOrbiterAngularSpeed
       ?? GAME.upgrade.voidOrbiterAngularSpeed,
     damage: GAME.upgrade.voidOrbiterDamage,
+    baseDamageScale: GAME.upgrade.voidOrbiterDamage / GAME.combat.baseDamage,
     damageType: payload.type === 'lightning' ? 'electric' : payload.type,
     payload,
     visual,

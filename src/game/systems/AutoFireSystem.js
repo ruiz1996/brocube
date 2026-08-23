@@ -79,6 +79,7 @@ export class AutoFireSystem {
           initialDelay: this.scene.upgrades.blastInterval,
           config: {
             radius: GAME.upgrade.blastRadius, damage: GAME.upgrade.blastDamage,
+            baseDamageScale: GAME.upgrade.blastDamage / GAME.combat.baseDamage,
             damageType: 'explosive', color: '#ff4fa3', secondaryColor: '#9b6cff',
           },
         }],
@@ -88,6 +89,7 @@ export class AutoFireSystem {
             chance: this.scene.upgrades.blastImpactChance,
             radius: GAME.upgrade.blastRadius,
             damage: GAME.upgrade.blastDamage,
+            baseDamageScale: GAME.upgrade.blastDamage / GAME.combat.baseDamage,
             damageType: 'explosive',
             color: '#ff4fa3',
             secondaryColor: '#9b6cff',
@@ -174,12 +176,17 @@ export class AutoFireSystem {
     fireFromPool();
     if (this.scene.upgrades.levels.doubleShot > 0) {
       fireFromPool();
-      return;
-    }
-    if (this.random() < this.scene.upgrades.extraBallChance) {
+    } else if (this.random() < this.scene.upgrades.extraBallChance) {
       this.#fireBall({
         randomized: true, definitionId: BASIC_BALL_ID,
         emitterId: 'paddle', source: 'multi-shot',
+      });
+    }
+    if (this.scene.collectibleRun.extraSpecialBallChance > 0
+      && this.random() < this.scene.collectibleRun.extraSpecialBallChance) {
+      fireFromPool();
+      this.scene.events.emit('ball:collectible-extra-shot', {
+        chance: this.scene.collectibleRun.extraSpecialBallChance,
       });
     }
   }
@@ -214,15 +221,14 @@ export class AutoFireSystem {
       definitionId, ...shot, speed: GAME.ball.speed,
       speedMultiplier: this.scene.upgrades.ballSpeedMultiplier * speedMultiplier,
       lives: this.scene.upgrades.newBallLives,
-      damageOverride: definition.contactDamage === false
-        ? definition.damage
-        : definition.damage + this.scene.upgrades.ballDamageBonus,
+      damageOverride: definition.damage + this.scene.upgrades.ballDamageBonus,
       damageMultiplier: definition.contactDamage === false ? 1 : damageMultiplier,
       launchSource: source, traits, fusionId, fusionComponents,
       visualOverrides, visualLayers, periodicEffects, damageEffects,
       orbitingDamageOverrides, guidanceOverrides, damageEffectConfigOverrides,
       replaceDefinitionAbilities, guidance, orbitingDamage,
     });
+    this.scene.collectibleRun.applyBall(ball);
     this.scene.world.add(ball);
     this.scene.events.emit('ball:launched', {
       ball, automatic: true, emitterId, definitionId, source,

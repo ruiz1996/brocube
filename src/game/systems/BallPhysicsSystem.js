@@ -122,6 +122,8 @@ export class BallPhysicsSystem {
           ball.velocityX = Math.sin(angle) * speed + paddle.velocityX * .06;
           ball.velocityY = -Math.abs(Math.cos(angle) * speed);
           ball.y = paddle.y - ball.radius - .5;
+          ball.collectibleNextHitDamageMultiplier = this.scene.collectibleRun
+            .recoilDamageMultiplier;
           events.emit('ball:bounce', { ball, paddle, surface: 'paddle', strength: relativeHit });
           break;
         }
@@ -152,16 +154,21 @@ export class BallPhysicsSystem {
       if (!ball.active) continue;
       if (ball.y - ball.radius > GAME.playBottom) {
         const bottomBounceSaved = this.random() < this.scene.upgrades.bottomBounceChance;
-        const topRecoverySaved = !bottomBounceSaved
+        const collectibleSaved = !bottomBounceSaved
+          && this.scene.collectibleRun.bottomRetentionChance > 0
+          && this.random() < this.scene.collectibleRun.bottomRetentionChance;
+        const topRecoverySaved = !bottomBounceSaved && !collectibleSaved
           && ball.hasTrait(BALL_TRAITS.TOP_LAUNCH)
           && this.random() < this.scene.upgrades.topRecoveryChance;
-        if (bottomBounceSaved || topRecoverySaved) {
+        if (bottomBounceSaved || collectibleSaved || topRecoverySaved) {
           ball.y = GAME.playBottom - ball.radius;
           ball.velocityY = -Math.abs(ball.velocityY);
           events.emit('ball:bounce', { ball, surface: 'bottom' });
           events.emit('ball:saved', {
             ball,
-            reason: topRecoverySaved ? 'top-recovery' : 'bottom-bounce',
+            reason: topRecoverySaved
+              ? 'top-recovery'
+              : collectibleSaved ? 'collectible-retention' : 'bottom-bounce',
           });
         } else {
           ball.lives = Math.max(0, ball.lives - 1);

@@ -15,6 +15,9 @@
           <span>NEON <b>BREAKER</b></span>
         </a>
         <div class="header-actions">
+          <button id="collectible-library-button" class="icon-button" type="button" aria-label="查看收集品图鉴" aria-expanded="false">
+            <span aria-hidden="true">◇</span>
+          </button>
           <button id="player-button" class="icon-button" type="button" aria-label="查看玩家档案与排行榜" aria-expanded="false">
             <span aria-hidden="true">♙</span>
           </button>
@@ -35,6 +38,10 @@
           <div class="status-item">
             <span class="status-label">SCORE</span>
             <strong id="score-value">000000</strong>
+          </div>
+          <div class="status-item status-center">
+            <span class="status-label">WORLD</span>
+            <strong id="world-level-value">W1</strong>
           </div>
           <div class="status-item status-center">
             <span class="status-label">BALLS</span>
@@ -97,6 +104,31 @@
               <button id="upgrade-library-close" class="icon-button" type="button" aria-label="关闭强化图鉴">×</button>
             </div>
             <div id="upgrade-library-list" class="upgrade-library-list"></div>
+          </div>
+          <div id="collectible-library" class="collectible-library is-hidden" aria-hidden="true">
+            <div class="collectible-library-header">
+              <div>
+                <p class="overlay-kicker">RELIC ARCHIVE</p>
+                <h2>收集品图鉴</h2>
+                <p id="collectible-summary" class="collectible-library-copy"></p>
+              </div>
+              <button id="collectible-library-close" class="icon-button" type="button" aria-label="关闭收集品图鉴">×</button>
+            </div>
+            <div class="collectible-chest-vault" aria-label="收集箱开箱">
+              <div class="collectible-chest-icon" aria-hidden="true">
+                <span class="collectible-chest-lid"></span>
+                <span class="collectible-chest-body">◇</span>
+              </div>
+              <div class="collectible-chest-copy">
+                <span>RELIC CACHE</span>
+                <strong><b id="collectible-chest-count">0</b> 个收集箱</strong>
+                <small>Boss 掉落，开启后随机获得一件未满级收集品</small>
+              </div>
+              <button id="collectible-chest-open" class="primary-button collectible-chest-open" type="button" disabled>开启箱子</button>
+            </div>
+            <div id="collectible-chest-reveal" class="collectible-chest-reveal is-hidden" aria-live="polite"></div>
+            <div id="collectible-filters" class="collectible-filters" aria-label="收集品品质筛选"></div>
+            <div id="collectible-library-list" class="collectible-library-list"></div>
           </div>
           <div id="player-panel" class="player-panel is-hidden" aria-hidden="true">
             <div class="player-panel-card" role="dialog" aria-modal="true" aria-labelledby="player-panel-title">

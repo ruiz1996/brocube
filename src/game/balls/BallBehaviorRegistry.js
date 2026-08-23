@@ -1,5 +1,5 @@
 import { GAME } from '../config.js';
-import { scaleDamage } from '../Damage.js';
+import { resolveAbilityDamage, scaleDamage } from '../Damage.js';
 
 function reflectBall(ball, normal) {
   const dot = ball.velocityX * normal.nx + ball.velocityY * normal.ny;
@@ -62,12 +62,22 @@ export class BallBehaviorRegistry {
 export function createDefaultBallBehaviors() {
   const registry = new BallBehaviorRegistry();
 
-  const explode = ({ scene, combat, ball, effectConfig, cause, origin = null, orbiter = null }) => {
+  const explode = ({
+    scene,
+    combat,
+    ball,
+    effectConfig,
+    cause,
+    origin = null,
+    orbiter = null,
+    hitDamageMultiplier = 1,
+  }) => {
     const radius = Math.max(1, effectConfig.radius ?? 120);
-    const damage = scaleDamage(
-      effectConfig.damage ?? GAME.combat.baseDamage,
-      effectConfig.damageMultiplier ?? 1,
-    );
+    const damage = scaleDamage(resolveAbilityDamage(ball, {
+      ...effectConfig,
+      baseDamageScale: effectConfig.baseDamageScale
+        ?? (effectConfig.damage ?? GAME.combat.baseDamage) / GAME.combat.baseDamage,
+    }, GAME.combat.baseDamage), hitDamageMultiplier);
     const x = origin?.x ?? ball.x;
     const y = origin?.y ?? ball.y;
     const hitBricks = [];
@@ -133,6 +143,7 @@ export function createDefaultBallBehaviors() {
         lives: scene.upgrades.newBallLives,
         damage: GAME.combat.baseDamage + scene.upgrades.ballDamageBonus,
       });
+      scene.collectibleRun.applyBall(derived);
       scene.world.add(derived);
       created.push(derived);
     }
@@ -146,17 +157,31 @@ export function createDefaultBallBehaviors() {
     return explode({ scene, combat, ball, effectConfig, cause: 'periodic-explosion', origin, orbiter });
   });
 
-  registry.registerDamageEffect('impact-blast', ({ scene, combat, ball, effectConfig, origin, orbiter }) => {
+  registry.registerDamageEffect('impact-blast', ({
+    scene, combat, ball, effectConfig, origin, orbiter, hitDamageMultiplier,
+  }) => {
     const chance = Math.max(0, Math.min(1, effectConfig.chance ?? 0));
     if (registry.random() >= chance) return null;
-    return explode({ scene, combat, ball, effectConfig, cause: 'impact-explosion', origin, orbiter });
+    return explode({
+      scene,
+      combat,
+      ball,
+      effectConfig,
+      cause: 'impact-explosion',
+      origin,
+      orbiter,
+      hitDamageMultiplier,
+    });
   });
 
-  registry.registerDamageEffect('chain-lightning', ({ scene, combat, ball, brick, effectConfig, origin }) => {
-    const damage = scaleDamage(
-      effectConfig.damage ?? GAME.combat.baseDamage,
-      effectConfig.damageMultiplier ?? 1,
-    );
+  registry.registerDamageEffect('chain-lightning', ({
+    scene, combat, ball, brick, effectConfig, origin, hitDamageMultiplier,
+  }) => {
+    const damage = scaleDamage(resolveAbilityDamage(ball, {
+      ...effectConfig,
+      baseDamageScale: effectConfig.baseDamageScale
+        ?? (effectConfig.damage ?? GAME.combat.baseDamage) / GAME.combat.baseDamage,
+    }, GAME.combat.baseDamage), hitDamageMultiplier ?? 1);
     const additionalTargets = Math.max(0, Math.round(effectConfig.additionalTargets ?? 1));
     const range = Math.max(1, effectConfig.range ?? 160);
     const targets = [brick];
@@ -194,6 +219,22 @@ export function createDefaultBallBehaviors() {
         damageType: 'electric',
         cause: 'chain-lightning',
       });
+      if (previous.active && scene.collectibleRun.rollLightningEcho()) {
+        const echoResult = combat.applyDamage({
+          ball,
+          brick: previous,
+          damage,
+          damageType: 'electric',
+          cause: 'chain-lightning-echo',
+        });
+        scene.events.emit('ball:lightning-echo', {
+          ball,
+          brick: previous,
+          damage,
+          source: 'chain-lightning',
+          destroyed: echoResult.destroyed,
+        });
+      }
       const strikeChance = Math.max(0, Math.min(1, effectConfig.strikeChance ?? 0));
       if (registry.random() < strikeChance && previous.active) {
         const strikeResult = combat.applyDamage({
@@ -211,6 +252,22 @@ export function createDefaultBallBehaviors() {
           damage,
           destroyed: strikeResult.destroyed,
         });
+        if (previous.active && scene.collectibleRun.rollLightningEcho()) {
+          const echoResult = combat.applyDamage({
+            ball,
+            brick: previous,
+            damage,
+            damageType: 'electric',
+            cause: 'lightning-strike-echo',
+          });
+          scene.events.emit('ball:lightning-echo', {
+            ball,
+            brick: previous,
+            damage,
+            source: 'lightning-strike',
+            destroyed: echoResult.destroyed,
+          });
+        }
       }
     }
 

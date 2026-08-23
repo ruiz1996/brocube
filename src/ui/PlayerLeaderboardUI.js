@@ -172,7 +172,11 @@ export class PlayerLeaderboardUI {
         const score = document.createElement('strong');
         score.className = 'leaderboard-score';
         score.textContent = Math.round(entry.score).toLocaleString('zh-CN');
-        row.append(rank, player, score);
+        const worldLevel = document.createElement('span');
+        worldLevel.className = 'leaderboard-world-level';
+        worldLevel.textContent = `W${Math.max(1, Math.floor(Number(entry.world_level) || 1)).toLocaleString('zh-CN')}`;
+        worldLevel.title = `世界等级 ${Math.max(1, Math.floor(Number(entry.world_level) || 1)).toLocaleString('zh-CN')}`;
+        row.append(rank, player, worldLevel, score);
         this.leaderboardList.append(row);
       });
     } catch (error) {

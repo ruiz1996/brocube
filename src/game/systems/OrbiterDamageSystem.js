@@ -1,6 +1,7 @@
 import { getNaturalOrbiterPosition, getOrbiterPosition } from '../balls/Orbiter.js';
 import { circlePolygon } from './BallPhysicsSystem.js';
-import { scaleDamage } from '../Damage.js';
+import { resolveAbilityDamage } from '../Damage.js';
+import { GAME } from '../config.js';
 
 export class OrbiterDamageSystem {
   constructor(scene) { this.scene = scene; }
@@ -23,10 +24,15 @@ export class OrbiterDamageSystem {
           if (orbiter.brickContacts.has(brick.id)) continue;
           orbiter.brickContacts.add(brick.id);
           const payload = orbiter.payload;
-          const damageMultiplier = payload?.damageMultiplier ?? 1;
           const damage = payload?.contactDamage === false
             ? 0
-            : scaleDamage(orbiter.damage, damageMultiplier);
+            : resolveAbilityDamage(ball, {
+              ...orbiter,
+              baseDamageScale: orbiter.baseDamageScale
+                ?? (orbiter.damage ?? GAME.combat.baseDamage) / GAME.combat.baseDamage,
+              damageMultiplier: (orbiter.damageMultiplier ?? 1)
+                * (payload?.damageMultiplier ?? 1),
+            });
           const contact = {
             normal: collision,
             orbiterId: orbiter.id,

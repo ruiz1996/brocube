@@ -177,6 +177,9 @@ export class BallFactory {
       radius: resolved.radius,
       angularSpeed: resolved.angularSpeed,
       damage: resolved.damage,
+      baseDamageScale: resolved.baseDamageScale,
+      flatDamageBonus: resolved.flatDamageBonus ?? 0,
+      damageMultiplier: resolved.damageMultiplier ?? 1,
       damageType: resolved.damageType,
       payload: resolved.payload ? {
         ...resolved.payload,

@@ -1,6 +1,11 @@
 import { GAME } from '../config.js';
 import { BALL_TRAITS } from '../balls/BallTraits.js';
-import { addBallBaseDamage, normalizeDamage } from '../Damage.js';
+import {
+  addBallBaseDamage,
+  normalizeDamage,
+  resolveAbilityDamage,
+  scaleDamage,
+} from '../Damage.js';
 
 export class BallCombatSystem {
   constructor(scene) { this.scene = scene; }
@@ -11,9 +16,15 @@ export class BallCombatSystem {
     if (!ball.active || !brick.active || !this.canHit(ball, brick)) return null;
     ball.brickContacts.add(brick.id);
     const contact = { normal };
+    const hitDamageMultiplier = ball.collectibleNextHitDamageMultiplier ?? 1;
     const dealsContactDamage = ball.contactDamage !== false && ball.damage > 0;
     const damageResult = dealsContactDamage
-      ? this.applyDamage({ ball, brick, damage: ball.damage, contact })
+      ? this.applyDamage({
+        ball,
+        brick,
+        damage: scaleDamage(ball.damage, hitDamageMultiplier),
+        contact,
+      })
       : { damage: 0, destroyed: false };
     if (ball.damageEffects.length > 0) {
       this.scene.ballBehaviors.runDamageEffects(ball.damageEffects, {
@@ -24,6 +35,7 @@ export class BallCombatSystem {
         ball,
         brick,
         contact,
+        hitDamageMultiplier,
         ...damageResult,
       });
     }
@@ -37,6 +49,7 @@ export class BallCombatSystem {
       contact,
       ...damageResult,
     });
+    ball.collectibleNextHitDamageMultiplier = 1;
     if (collisionResult.action === 'bounce') {
       this.scene.events.emit('ball:bounce', { ball, brick, surface: 'brick' });
     }
@@ -74,16 +87,25 @@ export class BallCombatSystem {
   #recordBallKill(ball, brick, cause) {
     if (!ball || ball.type !== 'ball') return;
     ball.kills = Math.max(0, Math.round(ball.kills ?? 0)) + 1;
+    const bonusProgress = this.scene.collectibleRun.rollBonusExperience() ? 1 : 0;
+    const experienceGained = (1 + bonusProgress)
+      * this.scene.collectibleRun.experienceMultiplier;
+    ball.experience = Math.max(0, Number(ball.experience ?? ball.kills - 1))
+      + experienceGained;
     const thresholds = GAME.ball.levelKillThresholds;
     const maximumLevel = thresholds.length + 1;
     while (
       ball.level < maximumLevel
-      && ball.kills >= thresholds[ball.level - 1]
+      && ball.experience + Number.EPSILON >= thresholds[ball.level - 1]
     ) {
       const previousLevel = ball.level;
       ball.level += 1;
       ball.levelUpAt = ball.age ?? 0;
-      if (ball.contactDamage !== false) addBallBaseDamage(ball, GAME.ball.levelDamageBonus);
+      const damageBonus = this.scene.collectibleRun.scaleBaseDamageGain(
+        GAME.ball.levelDamageBonus,
+        ball,
+      );
+      addBallBaseDamage(ball, damageBonus);
       const livesBonus = ball.level === GAME.ball.levelLivesBonusLevel
         ? GAME.ball.levelLivesBonus
         : 0;
@@ -96,28 +118,38 @@ export class BallCombatSystem {
         previousLevel,
         level: ball.level,
         kills: ball.kills,
-        damageBonus: ball.contactDamage === false ? 0 : GAME.ball.levelDamageBonus,
+        damageBonus,
         livesBonus,
         skillBonuses,
       });
     }
+    this.scene.events.emit('ball:experience', {
+      ball,
+      brick,
+      cause,
+      experience: ball.experience,
+      experienceGained,
+      bonusProgress,
+      multiplier: this.scene.collectibleRun.experienceMultiplier,
+    });
   }
 
   #applySkillLevelBonus(ball) {
     const skillBonuses = {};
     const blastEffect = ball.periodicEffects.find(({ id }) => id === 'area-blast');
     if (blastEffect) {
-      blastEffect.config.damage = (blastEffect.config.damage ?? GAME.upgrade.blastDamage)
+      blastEffect.config.flatDamageBonus = (blastEffect.config.flatDamageBonus ?? 0)
         + GAME.ball.levelBlastDamageBonus;
       blastEffect.config.radius = (blastEffect.config.radius ?? GAME.upgrade.blastRadius)
         + GAME.ball.levelBlastRadiusBonus;
       skillBonuses.blast = {
-        damage: blastEffect.config.damage,
+        damage: resolveAbilityDamage(ball, blastEffect.config, GAME.upgrade.blastDamage),
         radius: blastEffect.config.radius,
       };
       const impactEffect = ball.damageEffects.find(({ id }) => id === 'impact-blast');
       if (impactEffect) {
-        impactEffect.config.damage = blastEffect.config.damage;
+        impactEffect.config.baseDamageScale = blastEffect.config.baseDamageScale;
+        impactEffect.config.flatDamageBonus = blastEffect.config.flatDamageBonus;
         impactEffect.config.radius = blastEffect.config.radius;
       }
     }
@@ -126,33 +158,32 @@ export class BallCombatSystem {
       const payload = orbiter.payload;
       const payloadBlast = payload?.periodicEffects?.find(({ id }) => id === 'area-blast');
       if (payloadBlast) {
-        payloadBlast.config.damage = normalizeDamage(
-          (payloadBlast.config.damage ?? GAME.upgrade.blastDamage)
-            + GAME.ball.levelBlastDamageBonus,
+        payloadBlast.config.flatDamageBonus = normalizeDamage(
+          (payloadBlast.config.flatDamageBonus ?? 0) + GAME.ball.levelBlastDamageBonus,
         );
         payloadBlast.config.radius = (payloadBlast.config.radius ?? GAME.upgrade.blastRadius)
           + GAME.ball.levelBlastRadiusBonus;
         const impact = payload.damageEffects.find(({ id }) => id === 'impact-blast');
         if (impact) {
-          impact.config.damage = payloadBlast.config.damage;
+          impact.config.baseDamageScale = payloadBlast.config.baseDamageScale;
+          impact.config.flatDamageBonus = payloadBlast.config.flatDamageBonus;
           impact.config.radius = payloadBlast.config.radius;
         }
         skillBonuses.blast = {
-          damage: payloadBlast.config.damage,
+          damage: resolveAbilityDamage(ball, payloadBlast.config, GAME.upgrade.blastDamage),
           radius: payloadBlast.config.radius,
         };
       }
       const payloadLightning = payload?.damageEffects?.find(({ id }) => id === 'chain-lightning');
       if (payloadLightning) {
-        payloadLightning.config.damage = normalizeDamage(
-          (payloadLightning.config.damage ?? GAME.upgrade.lightningDamage)
-            + GAME.ball.levelLightningDamageBonus,
+        payloadLightning.config.flatDamageBonus = normalizeDamage(
+          (payloadLightning.config.flatDamageBonus ?? 0) + GAME.ball.levelLightningDamageBonus,
         );
         payloadLightning.config.additionalTargets = (
           payloadLightning.config.additionalTargets ?? GAME.upgrade.lightningAdditionalTargets
         ) + GAME.ball.levelLightningTargetBonus;
         skillBonuses.lightning = {
-          damage: payloadLightning.config.damage,
+          damage: resolveAbilityDamage(ball, payloadLightning.config, GAME.upgrade.lightningDamage),
           additionalTargets: payloadLightning.config.additionalTargets,
         };
       }
@@ -160,13 +191,13 @@ export class BallCombatSystem {
 
     const lightningEffect = ball.damageEffects.find(({ id }) => id === 'chain-lightning');
     if (lightningEffect) {
-      lightningEffect.config.damage = (lightningEffect.config.damage ?? GAME.upgrade.lightningDamage)
+      lightningEffect.config.flatDamageBonus = (lightningEffect.config.flatDamageBonus ?? 0)
         + GAME.ball.levelLightningDamageBonus;
       lightningEffect.config.additionalTargets = (
         lightningEffect.config.additionalTargets ?? GAME.upgrade.lightningAdditionalTargets
       ) + GAME.ball.levelLightningTargetBonus;
       skillBonuses.lightning = {
-        damage: lightningEffect.config.damage,
+        damage: resolveAbilityDamage(ball, lightningEffect.config, GAME.upgrade.lightningDamage),
         additionalTargets: lightningEffect.config.additionalTargets,
       };
     }

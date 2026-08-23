@@ -1,4 +1,5 @@
 import { ONLINE_CONFIG } from './onlineConfig.js';
+import { normalizeWorldLevel } from '../game/WorldLevel.js';
 
 const SESSION_STORAGE_KEY = 'neon-breaker.supabase-session.v1';
 const LOCAL_PROFILE_KEY = 'neon-breaker.player-profile.v1';
@@ -251,7 +252,7 @@ export class PlayerLeaderboardService {
     return this.snapshot();
   }
 
-  async submitRun({ score, elapsed, upgrades }) {
+  async submitRun({ score, elapsed, upgrades, worldLevel }) {
     if (!this.profile?.displayName) return null;
     const run = {
       score: Math.max(0, Math.round(score ?? 0)),
@@ -259,6 +260,7 @@ export class PlayerLeaderboardService {
       channel: this.channel,
       game_version: this.config.gameVersion,
       upgrades: upgrades ?? {},
+      world_level: normalizeWorldLevel(worldLevel),
     };
     if (this.mode === 'online') return this.client.submitRun(run);
 

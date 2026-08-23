@@ -32,6 +32,10 @@ function normalizeOrbitingDamage(config) {
     angularSpeed: config.angularSpeed ?? 3,
     phaseOffset: config.phaseOffset ?? 0,
     damage: Math.max(0, config.damage ?? GAME.combat.baseDamage),
+    baseDamageScale: config.baseDamageScale === undefined
+      ? undefined
+      : Math.max(0, config.baseDamageScale),
+    flatDamageBonus: Math.max(0, config.flatDamageBonus ?? 0),
     damageType: config.damageType ?? 'kinetic',
     payload: config.payload ? {
       ...config.payload,
@@ -98,7 +102,7 @@ export function createDefaultBallDefinitions() {
     collisionPolicy: 'bounce',
   }).register(VOID_ORBIT_BALL_ID, {
     traits: [BALL_TRAITS.VOID_ORBIT],
-    damage: 0,
+    damage: GAME.combat.baseDamage,
     damageType: 'void',
     contactDamage: false,
     collisionPolicy: 'bounce',
@@ -108,6 +112,7 @@ export function createDefaultBallDefinitions() {
       radius: GAME.upgrade.voidOrbiterRadius,
       angularSpeed: GAME.upgrade.voidOrbiterAngularSpeed,
       damage: GAME.upgrade.voidOrbiterDamage,
+      baseDamageScale: GAME.upgrade.voidOrbiterDamage / GAME.combat.baseDamage,
       damageType: 'void',
       visual: {
         color: '#a56cff',
@@ -142,13 +147,14 @@ export function createDefaultBallDefinitions() {
     },
   }).register(LIGHTNING_BALL_ID, {
     traits: [BALL_TRAITS.CHAIN_LIGHTNING],
-    damage: 0,
+    damage: GAME.combat.baseDamage,
     damageType: 'electric',
     contactDamage: false,
     damageEffects: [{
       id: 'chain-lightning',
       config: {
         damage: GAME.upgrade.lightningDamage,
+        baseDamageScale: GAME.upgrade.lightningDamage / GAME.combat.baseDamage,
         additionalTargets: GAME.upgrade.lightningAdditionalTargets,
         range: GAME.upgrade.lightningRange,
       },

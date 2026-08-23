@@ -6,11 +6,18 @@ import { GameEngine } from '../src/core/GameEngine.js';
 import { InputManager, mapPointerToElement } from '../src/core/InputManager.js';
 import { BreakoutScene } from '../src/game/BreakoutScene.js';
 import { GAME } from '../src/game/config.js';
-import { normalizeDamage, scaleDamage } from '../src/game/Damage.js';
+import { normalizeDamage, resolveAbilityDamage, scaleDamage } from '../src/game/Damage.js';
+import {
+  calculateWorldLevelModifiers,
+  clampWorldValue,
+  normalizeWorldLevel,
+} from '../src/game/WorldLevel.js';
 import { Brick } from '../src/game/entities/entities.js';
 import {
   BOSS_SHAPE_IDS,
   BossShapeBag,
+  calculateBossRushHealthMultiplier,
+  calculateBossEntryMultiplier,
   calculateBrickSizeHealthMultiplier,
   calculateExpectedBrickHitPoints,
   calculateLateGamePressure,
@@ -20,8 +27,20 @@ import {
   selectBrickHitPoints,
   selectBossPolygon,
 } from '../src/game/systems/BrickFieldSystem.js';
-import { calculateUpgradeScoreCost } from '../src/game/systems/UpgradeSystem.js';
-import { calculateUpgradeProgress } from '../src/ui/GameUI.js';
+import { UpgradeSystem, calculateUpgradeScoreCost } from '../src/game/systems/UpgradeSystem.js';
+import { calculateUpgradeProgress, formatWorldLevel } from '../src/ui/GameUI.js';
+import {
+  COLLECTIBLE_CATALOG,
+  COLLECTIBLE_QUALITIES,
+  getCollectible,
+} from '../src/game/collectibles/CollectibleCatalog.js';
+import { CollectibleInventory } from '../src/game/collectibles/CollectibleInventory.js';
+import {
+  calculateCollectibleRunModifiers,
+  createCollectibleRunEffects,
+} from '../src/game/collectibles/CollectibleRunEffects.js';
+import { PADDLE_SKINS } from '../src/game/paddles/PaddleSkins.js';
+import { renderCollectibleIcon } from '../src/ui/CollectibleIcon.js';
 import { ComboPlugin } from '../src/game/plugins/ComboPlugin.js';
 import {
   BASIC_BALL_ID,
@@ -292,12 +311,13 @@ test('未配置在线服务时仍建立稳定本机身份，并只保留当前�
 
   const named = await service.setDisplayName('测试玩家');
   assert.equal(named.displayName, '测试玩家');
-  await service.submitRun({ score: 1200, elapsed: 12.345, upgrades: { rapidFire: 1 } });
+  await service.submitRun({ score: 1200, elapsed: 12.345, upgrades: { rapidFire: 1 }, worldLevel: 7 });
   await service.submitRun({ score: 900, elapsed: 20, upgrades: {} });
   const leaderboard = await service.getLeaderboard();
   assert.equal(leaderboard.length, 1);
   assert.equal(leaderboard[0].score, 1200);
   assert.equal(leaderboard[0].duration_seconds, 12.35);
+  assert.equal(leaderboard[0].world_level, 7);
 
   const restored = new PlayerLeaderboardService({ config, storage });
   const restoredState = await restored.initialize();
@@ -319,7 +339,7 @@ test('Supabase REST 接入可创建匿名用户、保存可重名昵称、提交
     [],
     [{ user_id: userId, display_name: '同名玩家' }],
     null,
-    [{ rank: 1, player_code: 'AB12', display_name: '同名玩家', score: 3210, is_current: true }],
+    [{ rank: 1, player_code: 'AB12', display_name: '同名玩家', score: 3210, world_level: 12, is_current: true }],
   ];
   const fetcher = async (url, options) => {
     requests.push({ url, options });
@@ -343,7 +363,7 @@ test('Supabase REST 接入可创建匿名用户、保存可重名昵称、提交
 
   assert.equal((await service.initialize()).mode, 'online');
   await service.setDisplayName('同名玩家');
-  await service.submitRun({ score: 3210, elapsed: 40, upgrades: {} });
+  await service.submitRun({ score: 3210, elapsed: 40, upgrades: {}, worldLevel: 12 });
   const leaderboard = await service.getLeaderboard();
   assert.equal(leaderboard[0].is_current, true);
   assert.match(requests[0].url, /\/auth\/v1\/signup$/);
@@ -351,6 +371,7 @@ test('Supabase REST 接入可创建匿名用户、保存可重名昵称、提交
   assert.ok(requests.slice(1).every(({ options }) => options.headers.Authorization === 'Bearer access'));
   const runRequest = requests.find(({ url }) => url.endsWith('/rest/v1/game_runs'));
   assert.equal(runRequest.options.headers.Prefer, 'return=minimal');
+  assert.equal(JSON.parse(runRequest.options.body).world_level, 12);
   assert.match(requests.at(-1).url, /\/rest\/v1\/rpc\/get_leaderboard$/);
 });
 
@@ -440,7 +461,7 @@ test('生命增幅只强化新生成的球，最多可选择两级', () => {
   scene.exit();
 });
 
-test('攻击强化提升直接碰撞伤害但不影响技能伤害，并以低优先级出现', () => {
+test('攻击强化提升球基础伤害，并同步强化所有特殊球衍生伤害', () => {
   const events = new EventBus();
   const launches = [];
   events.on('ball:launched', ({ ball }) => launches.push(ball));
@@ -471,9 +492,16 @@ test('攻击强化提升直接碰撞伤害但不影响技能伤害，并以低�
       config: { damage: GAME.upgrade.blastDamage },
     }],
   });
+  const voidBall = scene.ballFactory.createPrimary({
+    definitionId: VOID_ORBIT_BALL_ID,
+    x: 400,
+    y: 400,
+    angle: 0,
+  });
   scene.world.add(directBall);
   scene.world.add(lightningBall);
   scene.world.add(blastBall);
+  scene.world.add(voidBall);
   scene.world.flush();
 
   const chooseDirectly = () => {
@@ -487,10 +515,20 @@ test('攻击强化提升直接碰撞伤害但不影响技能伤害，并以低�
   assert.equal(blastBall.damage, GAME.combat.baseDamage + 1);
   assert.equal(blastBall.periodicEffects[0].config.damage, GAME.upgrade.blastDamage);
   assert.equal(lightningBall.damage, 0);
-  assert.equal(
-    lightningBall.damageEffects[0].config.damage,
-    GAME.upgrade.lightningDamage,
-  );
+  assert.equal(lightningBall.baseDamage, GAME.combat.baseDamage + 1);
+  assert.equal(voidBall.baseDamage, GAME.combat.baseDamage + 1);
+  assert.equal(resolveAbilityDamage(
+    blastBall,
+    { ...blastBall.periodicEffects[0].config, baseDamageScale: 1 },
+  ), GAME.combat.baseDamage + 1);
+  assert.equal(resolveAbilityDamage(
+    lightningBall,
+    lightningBall.damageEffects[0].config,
+  ), GAME.combat.baseDamage + 1);
+  assert.equal(resolveAbilityDamage(
+    voidBall,
+    voidBall.orbiters[0],
+  ), GAME.combat.baseDamage + 1);
 
   scene.autoFire.random = () => .99;
   scene.autoFire.timeUntilShot = 0;
@@ -506,6 +544,11 @@ test('攻击强化提升直接碰撞伤害但不影响技能伤害，并以低�
   assert.equal(scene.upgrades.levels.ballDamage, GAME.upgrade.ballDamageMaxLevel);
   assert.equal(scene.upgrades.ballDamageBonus, GAME.upgrade.ballDamageMaxLevel);
   assert.equal(directBall.damage, GAME.combat.baseDamage + GAME.upgrade.ballDamageMaxLevel);
+  assert.equal(lightningBall.baseDamage, GAME.combat.baseDamage + GAME.upgrade.ballDamageMaxLevel);
+  assert.equal(resolveAbilityDamage(
+    lightningBall,
+    lightningBall.damageEffects[0].config,
+  ), GAME.combat.baseDamage + GAME.upgrade.ballDamageMaxLevel);
   assert.equal(scene.upgrades.isAvailable('ballDamage'), false);
   assert.equal(scene.upgrades.options().some(({ id }) => id === 'ballDamage'), false);
   scene.exit();
@@ -573,13 +616,13 @@ test('主球与衍生球独立升级，特殊球同步获得各自的等级能�
     y: 400,
     angle: 0,
   });
-  const chainDamage = lightning.damageEffects[0].config.damage;
+  const chainDamage = resolveAbilityDamage(lightning, lightning.damageEffects[0].config);
   for (let count = 0; count < 3; count += 1) killBrick(lightning, 'chain-lightning');
   assert.equal(lightning.level, 2);
   assert.equal(lightning.damage, 0);
   assert.equal(
-    lightning.damageEffects[0].config.damage,
-    chainDamage + GAME.ball.levelLightningDamageBonus,
+    resolveAbilityDamage(lightning, lightning.damageEffects[0].config),
+    chainDamage + GAME.ball.levelDamageBonus + GAME.ball.levelLightningDamageBonus,
   );
   assert.equal(
     lightning.damageEffects[0].config.additionalTargets,
@@ -589,8 +632,8 @@ test('主球与衍生球独立升级，特殊球同步获得各自的等级能�
   for (let count = 3; count < 9; count += 1) killBrick(lightning, 'chain-lightning');
   assert.equal(lightning.level, 3);
   assert.equal(
-    lightning.damageEffects[0].config.damage,
-    chainDamage + GAME.ball.levelLightningDamageBonus * 2,
+    resolveAbilityDamage(lightning, lightning.damageEffects[0].config),
+    chainDamage + (GAME.ball.levelDamageBonus + GAME.ball.levelLightningDamageBonus) * 2,
   );
   assert.equal(
     lightning.damageEffects[0].config.additionalTargets,
@@ -612,8 +655,11 @@ test('主球与衍生球独立升级，特殊球同步获得各自的等级能�
   assert.equal(blast.level, 2);
   assert.equal(blast.damage, GAME.combat.baseDamage + GAME.ball.levelDamageBonus);
   assert.equal(
-    blast.periodicEffects[0].config.damage,
-    GAME.upgrade.blastDamage + GAME.ball.levelBlastDamageBonus,
+    resolveAbilityDamage(blast, {
+      ...blast.periodicEffects[0].config,
+      baseDamageScale: 1,
+    }),
+    GAME.upgrade.blastDamage + GAME.ball.levelDamageBonus + GAME.ball.levelBlastDamageBonus,
   );
   assert.equal(
     blast.periodicEffects[0].config.radius,
@@ -622,8 +668,12 @@ test('主球与衍生球独立升级，特殊球同步获得各自的等级能�
   for (let count = 3; count < 9; count += 1) killBrick(blast, 'periodic-explosion');
   assert.equal(blast.level, 3);
   assert.equal(
-    blast.periodicEffects[0].config.damage,
-    GAME.upgrade.blastDamage + GAME.ball.levelBlastDamageBonus * 2,
+    resolveAbilityDamage(blast, {
+      ...blast.periodicEffects[0].config,
+      baseDamageScale: 1,
+    }),
+    GAME.upgrade.blastDamage
+      + (GAME.ball.levelDamageBonus + GAME.ball.levelBlastDamageBonus) * 2,
   );
   assert.equal(
     blast.periodicEffects[0].config.radius,
@@ -641,6 +691,10 @@ test('主球与衍生球独立升级，特殊球同步获得各自的等级能�
   assert.equal(voidBall.level, 2);
   assert.equal(voidBall.orbiters.length, 3);
   assert.ok(voidBall.orbiters.every(({ damage }) => damage === orbiterDamage));
+  assert.equal(
+    resolveAbilityDamage(voidBall, voidBall.orbiters[0]),
+    GAME.upgrade.voidOrbiterDamage + GAME.ball.levelDamageBonus,
+  );
   for (let count = 3; count < 9; count += 1) killBrick(voidBall, 'orbiting-satellite');
   assert.equal(voidBall.level, 3);
   assert.equal(voidBall.orbiters.length, 4);
@@ -1089,8 +1143,13 @@ test('虚空融合子球继承双方衍生强化，并随核心等级一起成�
   assert.equal(lightning.level, 2);
   assert.equal(lightning.orbiters.length, 3);
   assert.equal(
-    lightning.orbiters[0].payload.damageEffects[0].config.damage,
-    GAME.upgrade.lightningDamage + GAME.ball.levelLightningDamageBonus,
+    resolveAbilityDamage(
+      lightning,
+      lightning.orbiters[0].payload.damageEffects[0].config,
+    ),
+    GAME.upgrade.lightningDamage
+      + GAME.ball.levelDamageBonus
+      + GAME.ball.levelLightningDamageBonus,
   );
   assert.ok(lightning.orbiters.every(({ payload }) => payload.type === 'lightning'));
   scene.exit();
@@ -1923,6 +1982,419 @@ test('方块血量按可调公式随时间和分数无上限增长', () => {
   );
 });
 
+test('世界等级使用无固定等级上限的幂函数成长，并保护极端数值', () => {
+  const levelOne = calculateWorldLevelModifiers(1);
+  const levelTen = calculateWorldLevelModifiers(10);
+  const levelMillion = calculateWorldLevelModifiers(1_000_000);
+
+  assert.equal(levelOne.level, 1);
+  assert.equal(levelOne.enemyHealthMultiplier, 1);
+  assert.equal(levelOne.bossHealthMultiplier, 1);
+  assert.equal(levelOne.scoreMultiplier, 1);
+  assert.equal(levelOne.bonusChestExpectation, 0);
+  assert.ok(levelTen.enemyHealthMultiplier > levelTen.scoreMultiplier);
+  assert.ok(levelTen.bossHealthMultiplier > 1);
+  assert.ok(levelTen.bonusChestExpectation > 0);
+  assert.ok(levelMillion.enemyHealthMultiplier > levelTen.enemyHealthMultiplier);
+  assert.ok(levelMillion.scoreMultiplier > levelTen.scoreMultiplier);
+  assert.ok(Object.values(levelMillion).every(Number.isFinite));
+  assert.equal(normalizeWorldLevel(123456789), 123456789);
+  assert.equal(normalizeWorldLevel(-20), 1);
+  assert.equal(clampWorldValue(Infinity), GAME.worldLevel.maximumNumericValue);
+  assert.equal(formatWorldLevel(1), 'W1');
+  assert.equal(formatWorldLevel(10000).startsWith('W'), true);
+
+  const levelOneHp = calculateExpectedBrickHitPoints({ elapsed: 60, score: 5000 });
+  const levelTenHp = calculateExpectedBrickHitPoints({
+    elapsed: 60,
+    score: 5000,
+    worldLevel: 10,
+  });
+  assert.equal(
+    levelTenHp,
+    levelOneHp * levelTen.enemyHealthMultiplier,
+  );
+});
+
+test('世界等级在局外可调整，开始对局后锁定并写入快照', () => {
+  const events = new EventBus();
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { paused: false, setPaused(value) { this.paused = value; } },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+    worldLevel: 4,
+  });
+
+  assert.equal(scene.snapshot().worldLevel, 4);
+  assert.equal(scene.increaseWorldLevel(2), true);
+  assert.equal(scene.worldLevel, 6);
+  scene.startNewGame();
+  assert.equal(scene.setWorldLevel(99), false);
+  assert.equal(scene.snapshot().worldLevel, 6);
+  scene.settleRun();
+  assert.equal(scene.setWorldLevel(99), true);
+  assert.equal(scene.snapshot().worldLevel, 99);
+  scene.exit();
+});
+
+test('收集品图鉴完整收录十九件数值藏品和四种史诗挡板', () => {
+  assert.equal(COLLECTIBLE_CATALOG.length, 23);
+  assert.equal(new Set(COLLECTIBLE_CATALOG.map(({ id }) => id)).size, 23);
+  assert.equal(new Set(COLLECTIBLE_CATALOG.map(({ name }) => name)).size, 23);
+  const paddles = COLLECTIBLE_CATALOG.filter(({ category }) => category === 'paddle');
+  assert.equal(paddles.length, 4);
+  assert.ok(paddles.every(({ quality, maxLevel, paddleStyle }) => (
+    quality === 'epic' && maxLevel === 1 && paddleStyle
+  )));
+  assert.equal(COLLECTIBLE_CATALOG.filter(({ category }) => category !== 'paddle').length, 19);
+  assert.deepEqual(getCollectible('ascension-memory-core'), {
+    id: 'ascension-memory-core',
+    name: '升格记忆核',
+    quality: 'epic',
+    icon: 'ascension-core',
+    category: 'growth',
+    maxLevel: 10,
+    effect: '每级使球获得的升级经验增加 5%。',
+  });
+  assert.equal(COLLECTIBLE_CATALOG.filter(({ maxLevel }) => maxLevel === Infinity).length, 2);
+  assert.equal(PADDLE_SKINS.length, 5);
+  assert.ok(Object.values(COLLECTIBLE_QUALITIES).every(({ name, color }) => name && color));
+  for (const item of COLLECTIBLE_CATALOG) {
+    assert.match(renderCollectibleIcon(item), /<svg/);
+    assert.match(renderCollectibleIcon(item), new RegExp(item.id));
+  }
+});
+
+test('收集品库存限制有限等级、保留无上限成长并持久化挡板装备', () => {
+  const values = new Map();
+  const storage = {
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, value); },
+  };
+  const events = new EventBus();
+  const changes = [];
+  events.on('collectible:changed', (payload) => changes.push(payload));
+  const inventory = new CollectibleInventory({ storage, events });
+
+  inventory.grant('assault-prism', 99);
+  assert.equal(inventory.level('assault-prism'), 10);
+  inventory.grant('photon-whetstone', 1234);
+  assert.equal(inventory.level('photon-whetstone'), 1234);
+  assert.equal(inventory.equipPaddle('paddle-crystal-wing'), false);
+  inventory.grant('paddle-crystal-wing');
+  assert.equal(inventory.equipPaddle('paddle-crystal-wing'), true);
+  assert.equal(inventory.equippedPaddleStyle, 'crystal-wing');
+  assert.equal(changes.length, 3);
+  inventory.grantChests(3);
+  assert.equal(inventory.chests, 3);
+  assert.equal(inventory.consumeChest(), true);
+  assert.equal(inventory.chests, 2);
+
+  const restored = new CollectibleInventory({ storage });
+  assert.equal(restored.level('assault-prism'), 10);
+  assert.equal(restored.level('photon-whetstone'), 1234);
+  assert.equal(restored.equippedPaddleStyle, 'crystal-wing');
+  assert.equal(restored.chests, 2);
+  assert.equal(restored.catalogState().find(({ id }) => id === 'paddle-crystal-wing').equipped, true);
+  assert.equal(getCollectible('missing-item'), null);
+});
+
+test('十九种数值收集品在开局时统一计算为固定战斗修正', () => {
+  const modifiers = calculateCollectibleRunModifiers({
+    levels: {
+      'photon-whetstone': 10,
+      'dawn-calibrator': 5,
+      'assault-prism': 2,
+      'starforge-heart': 3,
+      'secondhand-compressor': 5,
+      'warp-escapement': 2,
+      'zero-hour-hourglass': 1,
+      'mirror-launch-spring': 10,
+      'extension-keel': 5,
+      'return-membrane': 10,
+      'hunter-calculus': 10,
+      'recoil-capacitor': 10,
+      'zenith-velocimeter': 10,
+      'fusion-shock-ring': 10,
+      'gravity-dial': 10,
+      'starhunter-lens': 10,
+      'thunder-echo-vial': 10,
+      'expedition-star-chart': 10,
+      'ascension-memory-core': 10,
+    },
+  });
+  assert.equal(modifiers.baseDamageMultiplier, 1.15);
+  assert.equal(modifiers.flatBaseDamageBonus, 21);
+  assert.ok(Math.abs(modifiers.fireIntervalMultiplier - .745) < 1e-12);
+  assert.equal(modifiers.extraSpecialBallChance, .2);
+  assert.equal(modifiers.paddleWidthMultiplier, 1.125);
+  assert.equal(modifiers.bottomRetentionChance, .2);
+  assert.equal(modifiers.bonusExperienceChance, .5);
+  assert.equal(modifiers.recoilDamageMultiplier, 2);
+  assert.equal(modifiers.topSpeedDamageScaleBonus, .5);
+  assert.equal(modifiers.blastFlatDamageBonus, 30);
+  assert.equal(modifiers.blastRadiusBonus, 100);
+  assert.equal(modifiers.voidOrbitRadiusMultiplier, 1.2);
+  assert.equal(modifiers.voidOrbitSpeedMultiplier, 1.2);
+  assert.equal(modifiers.navigationDamageMultiplier, 1.5);
+  assert.equal(modifiers.lightningEchoChance, .5);
+  assert.equal(modifiers.bossExtraDropChance, .5);
+  assert.equal(modifiers.experienceMultiplier, 1.5);
+});
+
+test('收集品只在开局建立快照，当局新获得等级从下一局开始生效', () => {
+  const values = new Map();
+  const storage = {
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, value); },
+  };
+  const events = new EventBus();
+  const inventory = new CollectibleInventory({ storage, events });
+  inventory.grant('secondhand-compressor');
+  inventory.grant('extension-keel');
+  const scene = new BreakoutScene();
+  scene.collectibles = inventory;
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: { active: false }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  const firstInterval = scene.upgrades.fireInterval;
+  assert.equal(scene.world.first('paddle').width, GAME.paddle.width * 1.025);
+  inventory.grant('secondhand-compressor', 4);
+  inventory.grant('extension-keel', 4);
+  assert.equal(scene.upgrades.fireInterval, firstInterval);
+  assert.equal(scene.collectibleRun.levels['secondhand-compressor'], 1);
+  assert.equal(scene.world.first('paddle').width, GAME.paddle.width * 1.025);
+
+  scene.settleRun();
+  scene.startNewGame();
+  assert.ok(scene.upgrades.fireInterval < firstInterval);
+  assert.equal(scene.collectibleRun.levels['secondhand-compressor'], 5);
+  assert.equal(scene.world.first('paddle').width, GAME.paddle.width * 1.125);
+  scene.exit();
+});
+
+test('伤害、爆炸、虚空、导航和天顶收集品作用于现有特殊球框架', () => {
+  const run = createCollectibleRunEffects({
+    levels: {
+      'photon-whetstone': 10,
+      'assault-prism': 2,
+      'fusion-shock-ring': 10,
+      'gravity-dial': 10,
+      'starhunter-lens': 10,
+      'zenith-velocimeter': 10,
+    },
+  });
+  const definitions = createDefaultBallDefinitions();
+  const ball = new BallFactory(definitions).createPrimary({
+    definitionId: MICRO_NAVIGATION_BALL_ID,
+    traits: [BALL_TRAITS.BLAST_CORE],
+    periodicEffects: [{
+      id: 'area-blast', interval: 1, config: { radius: 90, baseDamageScale: 1 },
+    }],
+    damageEffects: [{
+      id: 'impact-blast', config: { radius: 90, baseDamageScale: 1 },
+    }],
+  });
+  run.applyBall(ball);
+  assert.equal(ball.baseDamage, 26);
+  assert.equal(ball.periodicEffects[0].config.flatDamageBonus, 30);
+  assert.equal(ball.periodicEffects[0].config.radius, 190);
+  assert.equal(ball.damageEffects[0].config.flatDamageBonus, 30);
+  assert.equal(run.scaleBaseDamageGain(5, ball), 8);
+
+  const scene = { collectibleRun: run };
+  const upgrades = new UpgradeSystem(scene);
+  assert.equal(upgrades.topImpactDamageMultiplier, 1.5);
+  assert.equal(upgrades.voidOrbitRadius, GAME.upgrade.voidOrbitRadius * 1.2);
+  assert.equal(upgrades.voidOrbiterAngularSpeed, GAME.upgrade.voidOrbiterAngularSpeed * 1.2);
+});
+
+test('镜像发射簧独立追加一次可抽取特殊球的发射', () => {
+  const inventory = new CollectibleInventory({ storage: null });
+  inventory.grant('mirror-launch-spring', 10);
+  const events = new EventBus();
+  const scene = new BreakoutScene();
+  scene.collectibles = inventory;
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: { active: false }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  scene.upgrades.levels.topLaunch = 1;
+  const rolls = [0, 1, 0, .99, 1];
+  scene.autoFire.random = () => rolls.shift() ?? 1;
+  scene.autoFire.timeUntilShot = 0;
+  scene.autoFire.update(.01);
+  scene.world.flush();
+  const balls = scene.world.all('ball');
+  assert.equal(balls.length, 2);
+  assert.ok(balls.some((ball) => ball.hasTrait(BALL_TRAITS.TOP_LAUNCH)));
+  assert.ok(balls.some((ball) => ball.launchSource === 'automatic'));
+  scene.exit();
+});
+
+test('经验、击杀进度、挡板蓄能、底线保留和闪电回响使用开局收集品修正', () => {
+  const inventory = new CollectibleInventory({ storage: null });
+  inventory.grant('hunter-calculus', 10);
+  inventory.grant('ascension-memory-core', 10);
+  inventory.grant('recoil-capacitor', 10);
+  inventory.grant('return-membrane', 10);
+  inventory.grant('thunder-echo-vial', 10);
+  const events = new EventBus();
+  const scene = new BreakoutScene();
+  scene.collectibles = inventory;
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: { active: false }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  scene.collectibleRun.random = () => 0;
+
+  const experienceBall = scene.ballFactory.createPrimary({ definitionId: BASIC_BALL_ID });
+  scene.collectibleRun.applyBall(experienceBall);
+  scene.ballCombat.applyDamage({
+    ball: experienceBall,
+    brick: new Brick({ x: 0, y: 0, width: 30, height: 30, hitPoints: 1 }),
+    damage: 999,
+  });
+  assert.equal(experienceBall.kills, 1);
+  assert.equal(experienceBall.experience, 3);
+  assert.equal(experienceBall.level, 2);
+
+  const recoilBall = scene.ballFactory.createPrimary({ definitionId: BASIC_BALL_ID });
+  scene.collectibleRun.applyBall(recoilBall);
+  const recoilBrick = new Brick({ x: 0, y: 0, width: 30, height: 30, hitPoints: 25 });
+  recoilBall.collectibleNextHitDamageMultiplier = scene.collectibleRun.recoilDamageMultiplier;
+  scene.ballCombat.resolveBrickCollision({
+    ball: recoilBall,
+    brick: recoilBrick,
+    normal: { nx: 0, ny: 1, depth: 1 },
+  });
+  assert.equal(recoilBrick.hitPoints, 5);
+  assert.equal(recoilBall.collectibleNextHitDamageMultiplier, 1);
+
+  const lightningBall = scene.ballFactory.createPrimary({ definitionId: LIGHTNING_BALL_ID });
+  scene.collectibleRun.applyBall(lightningBall);
+  const lightningBrick = new Brick({ x: 0, y: 0, width: 30, height: 30, hitPoints: 25 });
+  scene.ballCombat.resolveBrickCollision({
+    ball: lightningBall,
+    brick: lightningBrick,
+    normal: { nx: 0, ny: 1, depth: 1 },
+  });
+  assert.equal(lightningBrick.hitPoints, 5);
+
+  const saved = [];
+  events.on('ball:saved', (payload) => saved.push(payload));
+  const fallingBall = scene.ballFactory.createPrimary({
+    definitionId: BASIC_BALL_ID,
+    x: GAME.width / 2,
+    y: GAME.playBottom + 20,
+    angle: Math.PI / 2,
+  });
+  scene.collectibleRun.applyBall(fallingBall);
+  scene.world.add(fallingBall);
+  scene.world.flush();
+  scene.ballPhysics.random = () => 0;
+  scene.ballPhysics.update(.01);
+  assert.equal(fallingBall.active, true);
+  assert.equal(saved.at(-1).reason, 'collectible-retention');
+  scene.exit();
+});
+
+test('Boss掉落收集箱，远征星图和世界等级额外箱分别独立计算', () => {
+  const inventory = new CollectibleInventory({ storage: null });
+  const events = new EventBus();
+  const scene = new BreakoutScene();
+  scene.collectibles = inventory;
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: { active: false }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  inventory.grant('expedition-star-chart', 10);
+  scene.collectibleDrops.random = () => 0;
+  scene.collectibleRun.random = () => 0;
+  const boss = new Brick({
+    x: 0, y: 0, width: 100, height: 60, hitPoints: 1, variant: 'boss',
+  });
+  const firstDrop = scene.collectibleDrops.handleBrickDestroyed(boss);
+  assert.equal(firstDrop.chestCount, 1);
+  assert.equal(firstDrop.worldChests, 0);
+  assert.equal(firstDrop.starChartChests, 0);
+  assert.equal(inventory.chests, 1);
+  assert.equal(scene.collectibleRun.bossExtraDropChance, 0);
+
+  scene.settleRun();
+  scene.startNewGame();
+  scene.collectibleDrops.random = () => 0;
+  scene.collectibleRun.random = () => 0;
+  assert.equal(scene.collectibleRun.bossExtraDropChance, .5);
+  const secondDrop = scene.collectibleDrops.handleBrickDestroyed(boss);
+  assert.equal(secondDrop.chestCount, 2);
+  assert.equal(secondDrop.worldChests, 0);
+  assert.equal(secondDrop.starChartChests, 1);
+  assert.equal(inventory.chests, 3);
+
+  scene.settleRun();
+  scene.setWorldLevel(100);
+  scene.startNewGame();
+  scene.collectibleDrops.random = () => 0;
+  scene.collectibleRun.random = () => 1;
+  const worldDrop = scene.collectibleDrops.handleBrickDestroyed(boss);
+  assert.ok(worldDrop.worldChests >= 2);
+  assert.equal(worldDrop.starChartChests, 0);
+  assert.equal(worldDrop.chestCount, 1 + worldDrop.worldChests);
+
+  scene.collectibleChests.random = () => 0;
+  const opened = scene.openCollectibleChest();
+  assert.equal(opened.collectible.id, 'photon-whetstone');
+  assert.equal(inventory.level('photon-whetstone'), 1);
+  assert.equal(opened.remainingChests, inventory.chests);
+  scene.exit();
+});
+
+test('开箱先按固定品质权重抽取，再在该品质未满级收集品中抽取', () => {
+  const inventory = new CollectibleInventory({ storage: null });
+  inventory.grantChests(4);
+  const events = new EventBus();
+  const scene = new BreakoutScene();
+  scene.collectibles = inventory;
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: { active: false }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+    worldLevel: 100000,
+  });
+  const qualities = [];
+  for (const qualityRoll of [.1, .7, .9, .99]) {
+    const rolls = [qualityRoll, 0];
+    scene.collectibleChests.random = () => rolls.shift() ?? 0;
+    qualities.push(scene.openCollectibleChest().collectible.quality);
+  }
+  assert.deepEqual(qualities, ['common', 'rare', 'epic', 'legendary']);
+  assert.equal(inventory.chests, 0);
+  scene.exit();
+});
+
 test('每三分钟生成包含Boss和小方块的Boss波次', () => {
   const events = new EventBus();
   const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
@@ -1945,6 +2417,7 @@ test('每三分钟生成包含Boss和小方块的Boss波次', () => {
   assert.equal(bosses.length, 1);
   assert.equal(minions.length, GAME.brick.bossMinionCount);
   assert.equal(waves[0].wave, 1);
+  assert.equal(waves[0].entryMultiplier, GAME.brick.worldOneFirstBossHealthMultiplier);
   assert.ok(BOSS_SHAPE_IDS.includes(bosses[0].bossShape));
   const bossArchetype = getBossArchetype(bosses[0].bossShape);
   assert.equal(bosses[0].width, Math.round(GAME.brick.bossWidth * bossArchetype.widthScale));
@@ -1962,6 +2435,15 @@ test('每三分钟生成包含Boss和小方块的Boss波次', () => {
     && brick.x + brick.width <= GAME.width - GAME.brick.spawnSideMargin
   )));
   scene.exit();
+});
+
+test('世界 1 首个 Boss 获得入门减血，但不削弱后续世界和波次', () => {
+  assert.equal(
+    calculateBossEntryMultiplier({ bossWave: 1, worldLevel: 1 }),
+    0.8,
+  );
+  assert.equal(calculateBossEntryMultiplier({ bossWave: 2, worldLevel: 1 }), 1);
+  assert.equal(calculateBossEntryMultiplier({ bossWave: 1, worldLevel: 2 }), 1);
 });
 
 test('第五个 Boss 起终局压力按波次复合增长', () => {
@@ -2000,6 +2482,54 @@ test('第五个 Boss 起终局压力按波次复合增长', () => {
       * seventh.bossHealthMultiplier,
   );
   assert.ok(seventhBossHp > 5000000);
+});
+
+test('第七个Boss开始进入Boss Rush并在击杀后短间隔刷新强化Boss', () => {
+  assert.equal(calculateBossRushHealthMultiplier(6), 1);
+  assert.equal(calculateBossRushHealthMultiplier(7), 5);
+  assert.equal(calculateBossRushHealthMultiplier(8), 25);
+
+  const events = new EventBus();
+  const waves = [];
+  const scheduled = [];
+  events.on('boss:wave', (payload) => waves.push(payload));
+  events.on('boss:rush-next-scheduled', (payload) => scheduled.push(payload));
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: { active: false }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  scene.brickField.elapsed = GAME.brick.bossWaveInterval * 7 - .01;
+  scene.brickField.nextBossWave = GAME.brick.bossWaveInterval * 7;
+  scene.brickField.bossWaveCount = 6;
+  scene.brickField.update(.02);
+  scene.world.flush();
+
+  assert.equal(scene.brickField.bossRushActive, true);
+  assert.equal(waves.length, 1);
+  assert.equal(waves[0].wave, 7);
+  assert.equal(waves[0].bossRush, true);
+  assert.equal(waves[0].bossRushHealthMultiplier, 5);
+  const seventhHp = waves[0].boss.maxHitPoints;
+
+  waves[0].boss.destroy();
+  scene.world.flush();
+  assert.equal(scene.brickField.handleBossDestroyed(waves[0].boss), true);
+  assert.equal(scheduled[0].nextWave, 8);
+  scene.brickField.update(GAME.brick.bossRushRespawnDelay - .01);
+  scene.world.flush();
+  assert.equal(waves.length, 1);
+  scene.brickField.update(.02);
+  scene.world.flush();
+  assert.equal(waves.length, 2);
+  assert.equal(waves[1].wave, 8);
+  assert.equal(waves[1].bossRushHealthMultiplier, 25);
+  assert.ok(waves[1].boss.maxHitPoints > seventhHp * 4);
+  scene.exit();
 });
 
 test('Boss 波次可随机选择多套对称凸多边形轮廓', () => {

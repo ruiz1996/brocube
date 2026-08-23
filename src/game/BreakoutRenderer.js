@@ -1,5 +1,6 @@
 import { COLORS, GAME } from './config.js';
 import { getBossArchetype } from './bosses/BossCatalog.js';
+import { drawPaddleSkin } from './paddles/PaddleSkins.js';
 
 export class BreakoutRenderer {
   constructor(scene) { this.scene = scene; }
@@ -144,17 +145,10 @@ export class BreakoutRenderer {
     ctx.save();
     const isSecondary = paddle.role === 'secondary';
     ctx.globalAlpha = isSecondary ? .8 : 1;
-    ctx.shadowColor = isSecondary ? COLORS.violet : COLORS.cyan;
-    ctx.shadowBlur = isSecondary ? 12 : 18;
-    const gradient = ctx.createLinearGradient(paddle.x, 0, paddle.x + paddle.width, 0);
-    const paddleColor = isSecondary ? COLORS.violet : COLORS.cyan;
-    gradient.addColorStop(0, isSecondary ? '#41358f' : '#248ba4'); gradient.addColorStop(.15, paddleColor); gradient.addColorStop(.85, paddleColor); gradient.addColorStop(1, isSecondary ? '#41358f' : '#248ba4');
-    ctx.fillStyle = gradient;
-    this.#roundRect(ctx, paddle.x, paddle.y, paddle.width, paddle.height, 7);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,.72)';
-    this.#roundRect(ctx, paddle.x + 12, paddle.y + 2, paddle.width - 24, 2, 1);
-    ctx.fill();
+    const paddleStyle = this.scene.paddlePreviewStyle
+      ?? this.scene.collectibles?.equippedPaddleStyle
+      ?? 'standard';
+    drawPaddleSkin(ctx, paddle, paddleStyle, { secondary: isSecondary });
     if (!isSecondary) {
       const charge = 1 - Math.max(0, Math.min(1, this.scene.autoFire.timeUntilShot / this.scene.autoFire.interval));
       ctx.fillStyle = 'rgba(85,232,255,.18)';
