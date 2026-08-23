@@ -88,12 +88,42 @@ export function selectBrickDimensions(random = Math.random, bounds = GAME.brick)
   };
 }
 
-export function calculateExpectedBrickHitPoints({ elapsed, score }, formula = GAME.brick.healthFormula) {
+export function calculateLateGamePressure(elapsed, config = GAME.brick) {
+  const settings = config.lateGame ?? {};
+  const bossWave = Math.floor(
+    Math.max(0, elapsed) / Math.max(1, config.bossWaveInterval ?? Infinity),
+  );
+  const startBossWave = settings.startBossWave ?? Infinity;
+  const tier = Math.max(0, bossWave - startBossWave + 1);
+  return {
+    bossWave,
+    tier,
+    healthMultiplier: (settings.healthMultiplierPerWave ?? 1) ** tier,
+    bossHealthMultiplier: (settings.bossHealthMultiplierPerWave ?? 1) ** tier,
+    spawnIntervalMultiplier: (settings.spawnIntervalMultiplierPerWave ?? 1) ** tier,
+    additionalBossMinions: Math.min(
+      settings.bossMinionBonusCap ?? Infinity,
+      (settings.bossMinionBonusPerWave ?? 0) * tier,
+    ),
+  };
+}
+
+export function calculateExpectedBrickHitPoints(
+  { elapsed, score },
+  formula = GAME.brick.healthFormula,
+  brickConfig = GAME.brick,
+) {
   const minutes = Math.max(0, elapsed) / 60;
   const normalizedScore = Math.max(0, score) / Math.max(1, formula.scoreScale);
-  return formula.baseHp
+  const baseHitPoints = formula.baseHp
     + formula.timeCoefficient * minutes ** formula.timeExponent
     + formula.scoreCoefficient * normalizedScore ** formula.scoreExponent;
+  return baseHitPoints * calculateLateGamePressure(elapsed, brickConfig).healthMultiplier;
+}
+
+function calculateRewardHitPoints(hitPoints, lateHealthMultiplier) {
+  const exponent = clamp(GAME.brick.lateGame?.rewardGrowthExponent ?? 1, 0, 1);
+  return hitPoints / Math.max(1, lateHealthMultiplier) ** (1 - exponent);
 }
 
 export function calculateBrickSizeHealthMultiplier(
@@ -153,6 +183,7 @@ export class BrickFieldSystem {
       return;
     }
 
+    const latePressure = calculateLateGamePressure(this.elapsed);
     const speed = Math.min(
       GAME.brick.maxSpeed,
       GAME.brick.initialSpeed + this.elapsed * GAME.brick.speedGrowthPerSecond,
@@ -175,9 +206,13 @@ export class BrickFieldSystem {
     this.spawnTimer -= dt;
     if (this.spawnTimer > 0) return;
     this.#spawnBatch();
-    const interval = Math.max(
+    const baseInterval = Math.max(
       GAME.brick.minSpawnInterval,
       GAME.brick.initialSpawnInterval - this.elapsed * .012,
+    );
+    const interval = Math.max(
+      GAME.brick.lateGame?.minimumSpawnInterval ?? GAME.brick.minSpawnInterval,
+      baseInterval * latePressure.spawnIntervalMultiplier,
     );
     this.spawnTimer += interval * randomBetween(.82, 1.16);
   }
@@ -212,11 +247,17 @@ export class BrickFieldSystem {
   }
 
   #spawnBossWave() {
+    const latePressure = calculateLateGamePressure(this.elapsed);
     const expectedHp = calculateExpectedBrickHitPoints({
       elapsed: this.elapsed,
       score: this.scene.score,
     });
-    const hitPoints = Math.max(1, Math.ceil(expectedHp * GAME.brick.bossHealthMultiplier));
+    const lateBossHealthMultiplier = (
+      latePressure.healthMultiplier * latePressure.bossHealthMultiplier
+    );
+    const hitPoints = Math.max(1, Math.ceil(
+      expectedHp * GAME.brick.bossHealthMultiplier * latePressure.bossHealthMultiplier,
+    ));
     const width = GAME.brick.bossWidth;
     const height = GAME.brick.bossHeight;
     const bossPolygon = selectBossPolygon(width, height);
@@ -226,18 +267,22 @@ export class BrickFieldSystem {
       x: (GAME.width - width) / 2,
       hitPoints,
       color: '#ff3f8f',
-      score: scoreForHealth(hitPoints, GAME.brick.bossScoreMultiplier),
+      score: scoreForHealth(
+        calculateRewardHitPoints(hitPoints, lateBossHealthMultiplier),
+        GAME.brick.bossScoreMultiplier,
+      ),
       variant: 'boss',
       bossShape: bossPolygon.shapeId,
       points: bossPolygon.points,
     });
 
     const minionLanes = [0, 1, 7, 8, 2, 6];
+    const minionCount = GAME.brick.bossMinionCount + latePressure.additionalBossMinions;
     const minions = [];
-    for (let index = 0; index < GAME.brick.bossMinionCount; index += 1) {
+    for (let index = 0; index < minionCount; index += 1) {
       const lane = minionLanes[index % minionLanes.length];
-      const secondRow = index >= 4;
-      minions.push(this.#spawnBrick(lane, GAME.playTop + (secondRow ? 102 : 20), {
+      const row = Math.floor(index / 4);
+      minions.push(this.#spawnBrick(lane, GAME.playTop + 20 + row * 82, {
         width: randomBetween(GAME.brick.minWidth * .68, GAME.brick.minWidth * .88),
         height: randomBetween(GAME.brick.minHeight * .68, GAME.brick.minHeight * .9),
         horizontalJitter: 2,
@@ -248,7 +293,8 @@ export class BrickFieldSystem {
     this.scene.events.emit('boss:wave', {
       boss,
       minions,
-      wave: Math.floor(this.elapsed / GAME.brick.bossWaveInterval),
+      wave: latePressure.bossWave,
+      lateTier: latePressure.tier,
       elapsed: this.elapsed,
     });
   }
@@ -273,12 +319,15 @@ export class BrickFieldSystem {
       width,
       height,
     });
+    const lateHealthMultiplier = calculateLateGamePressure(this.elapsed).healthMultiplier;
     return this.scene.world.add(new Brick({
       x, y, width, height,
       points: options.points ?? randomPolygon(width, height),
       hitPoints,
       color: options.color ?? PALETTE[Math.floor(Math.random() * PALETTE.length)],
-      score: options.score ?? scoreForHealth(hitPoints),
+      score: options.score ?? scoreForHealth(
+        calculateRewardHitPoints(hitPoints, lateHealthMultiplier),
+      ),
       variant: options.variant ?? 'normal',
       bossShape: options.bossShape ?? null,
     }));

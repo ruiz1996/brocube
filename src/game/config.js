@@ -128,6 +128,18 @@ export const GAME = Object.freeze({
     bossHeight: 70,
     bossHealthMultiplier: 8,
     bossScoreMultiplier: 3,
+    lateGame: {
+      // 前四个 Boss 保持原节奏；第 5 个 Boss 起进入终局压力阶段。
+      startBossWave: 5,
+      healthMultiplierPerWave: 1.42,
+      bossHealthMultiplierPerWave: 1.18,
+      spawnIntervalMultiplierPerWave: 0.88,
+      minimumSpawnInterval: 0.68,
+      bossMinionBonusPerWave: 2,
+      bossMinionBonusCap: 6,
+      // 后期耐久增长只按较低指数转化为分数，避免形成额外升级滚雪球。
+      rewardGrowthExponent: 0.35,
+    },
     healthFormula: {
       // 期望血量 = baseHp
       //   + timeCoefficient * (存活分钟数 ^ timeExponent)

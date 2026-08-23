@@ -11,6 +11,7 @@ import {
   BOSS_SHAPE_IDS,
   calculateBrickSizeHealthMultiplier,
   calculateExpectedBrickHitPoints,
+  calculateLateGamePressure,
   createBossPolygon,
   selectBrickDimensions,
   selectBrickHitPoints,
@@ -1641,6 +1642,30 @@ test('每三分钟生成包含Boss和小方块的Boss波次', () => {
     && brick.x + brick.width <= GAME.width - GAME.brick.spawnSideMargin
   )));
   scene.exit();
+});
+
+test('第五个 Boss 起终局压力按波次复合增长', () => {
+  const interval = GAME.brick.bossWaveInterval;
+  const beforeFifth = calculateLateGamePressure(interval * 5 - .01);
+  const fifth = calculateLateGamePressure(interval * 5);
+  const sixth = calculateLateGamePressure(interval * 6);
+  const seventh = calculateLateGamePressure(interval * 7);
+
+  assert.equal(beforeFifth.tier, 0);
+  assert.equal(beforeFifth.healthMultiplier, 1);
+  assert.equal(fifth.tier, 1);
+  assert.equal(sixth.tier, 2);
+  assert.equal(seventh.tier, 3);
+  assert.ok(fifth.healthMultiplier > 1);
+  assert.ok(sixth.healthMultiplier > fifth.healthMultiplier);
+  assert.ok(seventh.spawnIntervalMultiplier < sixth.spawnIntervalMultiplier);
+  assert.equal(fifth.additionalBossMinions, 2);
+  assert.equal(seventh.additionalBossMinions, GAME.brick.lateGame.bossMinionBonusCap);
+
+  const score = 100000;
+  const justBefore = calculateExpectedBrickHitPoints({ elapsed: interval * 5 - .01, score });
+  const atFifth = calculateExpectedBrickHitPoints({ elapsed: interval * 5, score });
+  assert.ok(atFifth > justBefore * 1.35);
 });
 
 test('Boss 波次可随机选择多套对称凸多边形轮廓', () => {
