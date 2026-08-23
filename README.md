@@ -11,6 +11,8 @@
 - 正式版：<https://ruiz1996.github.io/brocube/>
 - 内测版：<https://ruiz1996.github.io/brocube/beta/>
 
+Beta 分支还会通过 GitHub Actions 自动构建可侧载安装的 Android APK。应用名称为 `Brocube Beta`，包名为 `com.ruiz1996.brocube.beta`，锁定竖屏并将内置页面固定识别为 Beta 渠道。构建产物位于仓库 Actions 中最近一次 `Build Brocube Beta APK` 任务的 `brocube-beta-apk` Artifact；APK 内的本地存档与浏览器网页相互独立。
+
 ## 双版本发布
 
 - `main` 是正式发布分支，内容部署到网站根路由。

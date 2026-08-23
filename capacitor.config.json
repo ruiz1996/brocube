@@ -1,0 +1,10 @@
+{
+  "appId": "com.ruiz1996.brocube.beta",
+  "appName": "Brocube Beta",
+  "webDir": "dist",
+  "backgroundColor": "#050814",
+  "android": {
+    "backgroundColor": "#050814",
+    "allowMixedContent": false
+  }
+}

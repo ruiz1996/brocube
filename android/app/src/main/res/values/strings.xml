@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Brocube Beta</string>
+    <string name="title_activity_main">Brocube Beta</string>
+    <string name="package_name">com.ruiz1996.brocube.beta</string>
+    <string name="custom_url_scheme">com.ruiz1996.brocube.beta</string>
+</resources>

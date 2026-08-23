@@ -29,11 +29,16 @@ export function normalizeDisplayName(value) {
   return name;
 }
 
-export function detectReleaseChannel(locationLike = globalThis.location) {
+export function detectReleaseChannel(
+  locationLike = globalThis.location,
+  documentLike = globalThis.document,
+) {
   const pathname = locationLike?.pathname ?? '';
   const search = locationLike?.search ?? '';
   const explicitChannel = new URLSearchParams(search).get('channel');
   if (explicitChannel === 'beta' || explicitChannel === 'stable') return explicitChannel;
+  const packagedChannel = documentLike?.documentElement?.dataset?.releaseChannel;
+  if (packagedChannel === 'beta' || packagedChannel === 'stable') return packagedChannel;
   return /(?:^|\/)beta(?:\/|$)/i.test(pathname) ? 'beta' : 'stable';
 }
 

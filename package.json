@@ -4,7 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "node scripts/build-web.mjs",
+    "android:sync": "npm run build && cap sync android",
     "dev": "node dev-server.mjs",
     "test": "node --test"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.0"
   }
 }

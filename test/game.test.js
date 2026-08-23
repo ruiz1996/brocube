@@ -284,6 +284,10 @@ test('玩家名称允许重复但会规范空白并限制长度，正式版与 B
   assert.equal(detectReleaseChannel({ pathname: '/brocube/', search: '' }), 'stable');
   assert.equal(detectReleaseChannel({ pathname: '/brocube/beta/', search: '' }), 'beta');
   assert.equal(detectReleaseChannel({ pathname: '/', search: '?channel=beta' }), 'beta');
+  assert.equal(detectReleaseChannel(
+    { pathname: '/', search: '' },
+    { documentElement: { dataset: { releaseChannel: 'beta' } } },
+  ), 'beta');
 });
 
 test('未配置在线服务时仍建立稳定本机身份，并只保留当前玩家最高分', async () => {

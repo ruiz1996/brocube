@@ -1,4 +1,5 @@
 node_modules/
+dist/
 game-server.log
 game-server-error.log
 .DS_Store
