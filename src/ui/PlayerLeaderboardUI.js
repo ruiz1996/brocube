@@ -15,6 +15,7 @@ export class PlayerLeaderboardUI {
     this.leaderboardList = document.querySelector('#leaderboard-list');
     this.leaderboardEmpty = document.querySelector('#leaderboard-empty');
     this.refreshButton = document.querySelector('#leaderboard-refresh');
+    this.settleButton = document.querySelector('#settle-run-button');
     this.resumeAfterPanel = false;
     this.firstSetup = false;
     this.#bind();
@@ -37,12 +38,24 @@ export class PlayerLeaderboardUI {
       if (event.key === 'Enter') this.#saveName();
     });
     this.refreshButton.addEventListener('click', () => this.#loadLeaderboard());
-    this.engine.events.on('game:lost', async (result) => {
+    this.settleButton.addEventListener('click', () => this.#settleRun());
+    this.engine.events.on('game:started', () => this.#updateSettlementButton());
+    this.engine.events.on('game:finished', async (result) => {
+      this.#updateSettlementButton();
       try {
-        await this.service.submitRun(result);
+        const saved = await this.service.submitRun(result);
+        if (!saved) {
+          this.formStatus.textContent = '请先保存玩家名称，之后的成绩才能上传。';
+          return;
+        }
+        this.formStatus.textContent = result.reason === 'manual-settlement'
+          ? `本局 ${Math.round(result.score).toLocaleString('zh-CN')} 分已保存。`
+          : this.formStatus.textContent;
+        this.engine.events.emit('leaderboard:run-submitted', { result, saved });
         if (!this.panel.classList.contains('is-hidden')) await this.#loadLeaderboard();
       } catch (error) {
         this.formStatus.textContent = `成绩保存失败：${error.message}`;
+        this.engine.events.emit('leaderboard:run-submit-failed', { result, error });
       }
     });
   }
@@ -57,6 +70,7 @@ export class PlayerLeaderboardUI {
     this.nameInput.value = state.displayName;
     this.formStatus.textContent = firstSetup ? '名称允许重复，之后也可以随时修改。' : '';
     this.#renderProfile(state);
+    this.#updateSettlementButton();
     this.panel.classList.remove('is-hidden');
     this.panel.setAttribute('aria-hidden', 'false');
     this.button.setAttribute('aria-expanded', 'true');
@@ -91,6 +105,26 @@ export class PlayerLeaderboardUI {
     } finally {
       this.saveButton.disabled = false;
     }
+  }
+
+  #settleRun() {
+    if (!['playing', 'upgrading'].includes(this.scene.state)) return;
+    if (!this.service.snapshot().displayName) {
+      this.formStatus.textContent = '请先保存玩家名称，再结算并上传成绩。';
+      this.nameInput.focus();
+      return;
+    }
+    const confirmed = globalThis.confirm?.(
+      `确定结束本局并上传当前 ${Math.round(this.scene.score).toLocaleString('zh-CN')} 分吗？`,
+    ) ?? true;
+    if (!confirmed) return;
+    this.settleButton.disabled = true;
+    this.formStatus.textContent = '正在结算并上传本局成绩…';
+    this.scene.settleRun();
+  }
+
+  #updateSettlementButton() {
+    this.settleButton.disabled = !['playing', 'upgrading'].includes(this.scene.state);
   }
 
   #renderProfile(state) {

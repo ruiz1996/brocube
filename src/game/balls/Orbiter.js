@@ -1,4 +1,4 @@
-export function getOrbiterPosition(ball, orbiter, sample = ball) {
+export function getNaturalOrbiterPosition(ball, orbiter, sample = ball) {
   const angle = orbiter.phase + (sample.age ?? ball.age) * orbiter.angularSpeed;
   return {
     x: sample.x + Math.cos(angle) * orbiter.orbitRadius,
@@ -6,6 +6,18 @@ export function getOrbiterPosition(ball, orbiter, sample = ball) {
     radius: orbiter.radius,
     angle,
   };
+}
+
+export function getOrbiterPosition(ball, orbiter, sample = ball) {
+  if (sample === ball && orbiter.positionOverride) {
+    return {
+      ...orbiter.positionOverride,
+      radius: orbiter.radius,
+      angle: orbiter.positionOverride.angle
+        ?? orbiter.phase + (ball.age ?? 0) * orbiter.angularSpeed,
+    };
+  }
+  return getNaturalOrbiterPosition(ball, orbiter, sample);
 }
 
 export function getOrbiterTrail(ball, orbiter) {

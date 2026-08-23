@@ -20,6 +20,7 @@ export class BallFactory {
     level = GAME.ball.defaultLevel,
     lives = GAME.ball.defaultLives,
     damageOverride,
+    damageMultiplier = 1,
     visualOverrides = {},
     visualLayers = [],
     damageEffects = [],
@@ -47,6 +48,7 @@ export class BallFactory {
       level,
       lives,
       damageOverride,
+      damageMultiplier,
       visualOverrides,
       visualLayers,
       damageEffects: replaceDefinitionAbilities
@@ -113,6 +115,7 @@ export class BallFactory {
     level,
     lives,
     damageOverride,
+    damageMultiplier = 1,
     visualOverrides = {},
     visualLayers = [],
     damageEffects = definition.damageEffects,
@@ -138,6 +141,7 @@ export class BallFactory {
       lives,
       radius: definition.radius,
       damage: damageOverride ?? definition.damage,
+      damageMultiplier,
       damageType: definition.damageType,
       contactDamage: definition.contactDamage,
       damageEffects: damageEffects.map((effect) => ({
@@ -165,13 +169,30 @@ export class BallFactory {
   #createOrbiters(config, overrides = {}) {
     if (!config) return [];
     const resolved = { ...config, ...overrides };
-    return Array.from({ length: resolved.count }, (_, index) => ({
-      phase: resolved.phaseOffset + index * Math.PI * 2 / resolved.count,
+    const count = Math.max(1, Math.round(resolved.count ?? 1));
+    const phaseOffset = resolved.phaseOffset ?? 0;
+    return Array.from({ length: count }, (_, index) => ({
+      phase: phaseOffset + index * Math.PI * 2 / count,
       orbitRadius: resolved.orbitRadius,
       radius: resolved.radius,
       angularSpeed: resolved.angularSpeed,
       damage: resolved.damage,
       damageType: resolved.damageType,
+      payload: resolved.payload ? {
+        ...resolved.payload,
+        traits: [...(resolved.payload.traits ?? [])],
+        damageEffects: (resolved.payload.damageEffects ?? []).map((effect) => ({
+          id: effect.id,
+          config: { ...(effect.config ?? {}) },
+        })),
+        periodicEffects: (resolved.payload.periodicEffects ?? []).map((effect) => ({
+          id: effect.id,
+          interval: effect.interval,
+          initialDelay: effect.initialDelay,
+          config: { ...(effect.config ?? {}) },
+        })),
+        guidance: resolved.payload.guidance ? { ...resolved.payload.guidance } : null,
+      } : null,
       visual: { ...resolved.visual },
     }));
   }

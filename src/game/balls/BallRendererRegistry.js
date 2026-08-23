@@ -102,6 +102,38 @@ export class BallRendererRegistry {
 export function createDefaultBallRenderers() {
   const registry = new BallRendererRegistry();
 
+  registry.registerLayer('fusion-signature', (ctx, ball, config) => {
+    const age = ball.age ?? 0;
+    const pulse = .5 + Math.sin(age * 8) * .5;
+    const radius = ball.radius * (1.85 + pulse * .12);
+    ctx.save();
+    ctx.translate(ball.x, ball.y);
+    ctx.rotate(age * (config.style === 'orbit' ? -2.8 : 2.2));
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.shadowBlur = 8;
+    ctx.lineWidth = 1.15;
+    ctx.strokeStyle = config.primary ?? '#ffffff';
+    ctx.shadowColor = config.primary ?? '#ffffff';
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, -.25, Math.PI * .78);
+    ctx.stroke();
+    ctx.rotate(Math.PI);
+    ctx.strokeStyle = config.secondary ?? '#9b6cff';
+    ctx.shadowColor = config.secondary ?? '#9b6cff';
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 1.08, -.25, Math.PI * .78);
+    ctx.stroke();
+    const nodes = config.style === 'pulse' ? 4 : config.style === 'crown' ? 3 : 2;
+    for (let index = 0; index < nodes; index += 1) {
+      const angle = index * TAU / nodes;
+      ctx.fillStyle = index % 2 === 0 ? config.primary : config.secondary;
+      ctx.beginPath();
+      ctx.arc(Math.cos(angle) * radius, Math.sin(angle) * radius, 1.15, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  });
+
   registry.register('orb', (ctx, ball) => {
     const trailColor = ball.visual.trailColor ?? ball.visual.color;
     ctx.save();
@@ -284,12 +316,48 @@ export function createDefaultBallRenderers() {
         position.radius,
       );
       satellite.addColorStop(0, position.orbiter.visual.coreColor);
-      satellite.addColorStop(.38, '#c38cff');
+      satellite.addColorStop(.38, position.orbiter.visual.innerColor ?? '#c38cff');
       satellite.addColorStop(1, position.orbiter.visual.color);
       ctx.fillStyle = satellite;
       ctx.beginPath();
       ctx.arc(position.x, position.y, position.radius, 0, Math.PI * 2);
       ctx.fill();
+
+      const payloadType = position.orbiter.visual.payloadType
+        ?? position.orbiter.payload?.type;
+      if (payloadType) {
+        ctx.save();
+        ctx.translate(position.x, position.y);
+        ctx.rotate(position.angle + Math.PI / 2);
+        ctx.globalAlpha = .92;
+        ctx.shadowBlur = 5;
+        ctx.strokeStyle = position.orbiter.visual.coreColor;
+        ctx.fillStyle = position.orbiter.visual.coreColor;
+        ctx.lineWidth = 1;
+        if (payloadType === 'zenith' || payloadType === 'navigation') {
+          ctx.beginPath();
+          ctx.moveTo(0, -position.radius * .75);
+          ctx.lineTo(position.radius * .48, position.radius * .5);
+          ctx.lineTo(-position.radius * .48, position.radius * .5);
+          ctx.closePath();
+          payloadType === 'navigation' ? ctx.stroke() : ctx.fill();
+        } else if (payloadType === 'blast') {
+          ctx.beginPath();
+          ctx.arc(0, 0, position.radius * .58, 0, TAU);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(0, 0, 1.2 + pulse, 0, TAU);
+          ctx.fill();
+        } else if (payloadType === 'lightning') {
+          ctx.beginPath();
+          ctx.moveTo(-1, -position.radius * .7);
+          ctx.lineTo(1.4, -.4);
+          ctx.lineTo(-.4, -.4);
+          ctx.lineTo(1, position.radius * .7);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
     }
 
     ctx.shadowColor = '#8d4de2';

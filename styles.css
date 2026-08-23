@@ -417,6 +417,18 @@ button { font: inherit; }
 }
 .secondary-button:disabled { opacity: .48; cursor: wait; }
 .player-form-status { min-height: 15px; margin: 7px 0 0; color: #7483a2; font-size: 9px; }
+.run-settlement {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.run-settlement > span { color: #7483a2; font-size: 9px; line-height: 1.45; }
+.settlement-button { flex: 0 0 auto; color: #ff9bbd; border-color: rgba(255, 92, 171, .38); background: rgba(255, 92, 171, .08); }
+.settlement-button:disabled { color: #66718b; border-color: var(--line); background: rgba(91, 104, 133, .06); cursor: not-allowed; }
 .leaderboard { margin-top: 17px; }
 .leaderboard-header { align-items: center; }
 .leaderboard-header h3 { margin: 4px 0 0; font-size: 17px; }

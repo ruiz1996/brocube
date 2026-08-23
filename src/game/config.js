@@ -92,7 +92,7 @@ export const GAME = Object.freeze({
     lightningStrikeChancePerLevel: 0.15,
     lightningStrikeMaxLevel: 3,
     ballSpeedMultiplierPerLevel: 1.12,
-    ballSpeedMaxLevel: 10,
+    ballSpeedMaxLevel: 3,
     ballDamagePerLevel: 1,
     ballDamageMaxLevel: 99,
     ballDamageOfferChance: 0.08,
@@ -126,13 +126,14 @@ export const GAME = Object.freeze({
     bossMinionCount: 6,
     bossWidth: 130,
     bossHeight: 70,
-    bossHealthMultiplier: 8,
+    bossHealthMultiplier: 12,
     bossScoreMultiplier: 3,
     lateGame: {
       // 前四个 Boss 保持原节奏；第 5 个 Boss 起进入终局压力阶段。
       startBossWave: 5,
       healthMultiplierPerWave: 1.42,
-      bossHealthMultiplierPerWave: 1.18,
+      // Boss 专属耐久在终局阶段快速抬升，目标是在第 6～7 波形成致命输出检查。
+      bossHealthMultiplierPerWave: 4,
       spawnIntervalMultiplierPerWave: 0.88,
       minimumSpawnInterval: 0.68,
       bossMinionBonusPerWave: 2,

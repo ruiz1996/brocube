@@ -1,6 +1,7 @@
 import { GAME } from '../config.js';
 import { Paddle } from '../entities/entities.js';
 import { BALL_TRAITS } from '../balls/BallTraits.js';
+import { addBallBaseDamage, setBallBaseDamage } from '../Damage.js';
 
 const UPGRADE_IDS = [
   'rapidFire',
@@ -274,7 +275,7 @@ export class UpgradeSystem {
       }
     } else if (id === 'ballDamage') {
       for (const ball of this.scene.world.all('ball')) {
-        if (ball.contactDamage !== false) ball.damage += GAME.upgrade.ballDamagePerLevel;
+        if (ball.contactDamage !== false) addBallBaseDamage(ball, GAME.upgrade.ballDamagePerLevel);
       }
     } else if (id === 'paddleLength') {
       const paddle = this.scene.world.all('paddle').find(({ role }) => role === 'primary');
@@ -299,15 +300,30 @@ export class UpgradeSystem {
         }));
       }
     } else if (id === 'topImpact') {
-      const previousMultiplier = 1 + (GAME.upgrade.topLaunchSpeedMultiplier - 1)
-        * GAME.upgrade.topImpactDamageScalePerLevel * (this.levels.topImpact - 1);
-      const ratio = this.topImpactDamageMultiplier / previousMultiplier;
       for (const ball of this.scene.world.all('ball')) {
-        if (ball.hasTrait(BALL_TRAITS.TOP_LAUNCH) && ball.contactDamage !== false) ball.damage *= ratio;
+        if (!ball.hasTrait(BALL_TRAITS.TOP_LAUNCH)) continue;
+        if (ball.contactDamage !== false) {
+          ball.contactDamageMultiplier = this.topImpactDamageMultiplier;
+          setBallBaseDamage(ball, ball.baseDamage ?? ball.damage);
+        }
+        const lightningEffect = ball.damageEffects
+          .find(({ id: effectId }) => effectId === 'chain-lightning');
+        if (lightningEffect) {
+          lightningEffect.config.damageMultiplier = this.topImpactDamageMultiplier;
+        }
+        for (const orbiter of ball.orbiters) {
+          if (orbiter.payload?.traits?.has(BALL_TRAITS.TOP_LAUNCH)) {
+            orbiter.payload.damageMultiplier = this.topImpactDamageMultiplier;
+          }
+        }
       }
     } else if (id === 'blastCooldown') {
       for (const ball of this.scene.world.all('ball')) {
-        for (const effect of ball.periodicEffects) {
+        const effects = [
+          ...ball.periodicEffects,
+          ...ball.orbiters.flatMap((orbiter) => orbiter.payload?.periodicEffects ?? []),
+        ];
+        for (const effect of effects) {
           if (effect.id !== 'area-blast') continue;
           effect.interval = this.blastInterval;
           effect.timeRemaining = Math.min(effect.timeRemaining, effect.interval);
@@ -316,17 +332,23 @@ export class UpgradeSystem {
     } else if (id === 'blastImpact') {
       for (const ball of this.scene.world.all('ball')) {
         if (!ball.hasTrait(BALL_TRAITS.BLAST_CORE)) continue;
-        let impact = ball.damageEffects.find(({ id: effectId }) => effectId === 'impact-blast');
-        if (!impact) {
-          impact = { id: 'impact-blast', config: {} };
-          ball.damageEffects.push(impact);
+        const payloadHolders = ball.orbiters
+          .map(({ payload }) => payload)
+          .filter((payload) => payload?.traits?.has(BALL_TRAITS.BLAST_CORE));
+        const abilityHolders = payloadHolders.length > 0 ? payloadHolders : [ball];
+        for (const holder of abilityHolders) {
+          let impact = holder.damageEffects.find(({ id: effectId }) => effectId === 'impact-blast');
+          if (!impact) {
+            impact = { id: 'impact-blast', config: {} };
+            holder.damageEffects.push(impact);
+          }
+          const blast = holder.periodicEffects.find(({ id: effectId }) => effectId === 'area-blast');
+          Object.assign(impact.config, {
+            chance: this.blastImpactChance,
+            damage: blast?.config.damage ?? GAME.upgrade.blastDamage,
+            radius: blast?.config.radius ?? GAME.upgrade.blastRadius,
+          });
         }
-        const blast = ball.periodicEffects.find(({ id: effectId }) => effectId === 'area-blast');
-        Object.assign(impact.config, {
-          chance: this.blastImpactChance,
-          damage: blast?.config.damage ?? GAME.upgrade.blastDamage,
-          radius: blast?.config.radius ?? GAME.upgrade.blastRadius,
-        });
       }
     } else if (id === 'voidOrbitSpeed') {
       for (const ball of this.scene.world.all('ball')) {
@@ -345,11 +367,19 @@ export class UpgradeSystem {
         if (ball.hasTrait(BALL_TRAITS.MICRO_NAVIGATION) && ball.guidance) {
           ball.guidance.strength = this.navigationStrength;
         }
+        for (const orbiter of ball.orbiters) {
+          if (orbiter.payload?.guidance) orbiter.payload.guidance.strength = this.navigationStrength;
+        }
       }
     } else if (id === 'navigationReturn') {
       for (const ball of this.scene.world.all('ball')) {
         if (ball.hasTrait(BALL_TRAITS.MICRO_NAVIGATION) && ball.guidance) {
           ball.guidance.returnStrikeChance = this.navigationReturnChance;
+        }
+        for (const orbiter of ball.orbiters) {
+          if (orbiter.payload?.guidance) {
+            orbiter.payload.guidance.returnStrikeChance = this.navigationReturnChance;
+          }
         }
       }
     } else if (id === 'lightningJumps') {
@@ -360,12 +390,25 @@ export class UpgradeSystem {
           effect.config.additionalTargets = this.lightningAdditionalTargets
             + (ball.level - 1) * GAME.ball.levelLightningTargetBonus;
         }
+        for (const orbiter of ball.orbiters) {
+          const payloadEffect = orbiter.payload?.damageEffects
+            ?.find(({ id: effectId }) => effectId === 'chain-lightning');
+          if (payloadEffect) {
+            payloadEffect.config.additionalTargets = this.lightningAdditionalTargets
+              + (ball.level - 1) * GAME.ball.levelLightningTargetBonus;
+          }
+        }
       }
     } else if (id === 'lightningStrike') {
       for (const ball of this.scene.world.all('ball')) {
         if (!ball.hasTrait(BALL_TRAITS.CHAIN_LIGHTNING)) continue;
         const effect = ball.damageEffects.find(({ id: effectId }) => effectId === 'chain-lightning');
         if (effect) effect.config.strikeChance = this.lightningStrikeChance;
+        for (const orbiter of ball.orbiters) {
+          const payloadEffect = orbiter.payload?.damageEffects
+            ?.find(({ id: effectId }) => effectId === 'chain-lightning');
+          if (payloadEffect) payloadEffect.config.strikeChance = this.lightningStrikeChance;
+        }
       }
     }
 

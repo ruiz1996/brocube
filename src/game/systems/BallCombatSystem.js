@@ -1,5 +1,6 @@
 import { GAME } from '../config.js';
 import { BALL_TRAITS } from '../balls/BallTraits.js';
+import { addBallBaseDamage, normalizeDamage } from '../Damage.js';
 
 export class BallCombatSystem {
   constructor(scene) { this.scene = scene; }
@@ -52,7 +53,7 @@ export class BallCombatSystem {
     triggerEffects = false,
   }) {
     if (!brick.active) return { damage: 0, destroyed: false };
-    const appliedDamage = Math.max(0, damage);
+    const appliedDamage = normalizeDamage(damage);
     const destroyed = brick.damage(appliedDamage);
     const payload = { brick, ball, damage: appliedDamage, damageType, destroyed, contact, cause };
     this.scene.events.emit('brick:hit', payload);
@@ -82,7 +83,7 @@ export class BallCombatSystem {
       const previousLevel = ball.level;
       ball.level += 1;
       ball.levelUpAt = ball.age ?? 0;
-      if (ball.contactDamage !== false) ball.damage += GAME.ball.levelDamageBonus;
+      if (ball.contactDamage !== false) addBallBaseDamage(ball, GAME.ball.levelDamageBonus);
       const livesBonus = ball.level === GAME.ball.levelLivesBonusLevel
         ? GAME.ball.levelLivesBonus
         : 0;
@@ -121,6 +122,42 @@ export class BallCombatSystem {
       }
     }
 
+    for (const orbiter of ball.orbiters) {
+      const payload = orbiter.payload;
+      const payloadBlast = payload?.periodicEffects?.find(({ id }) => id === 'area-blast');
+      if (payloadBlast) {
+        payloadBlast.config.damage = normalizeDamage(
+          (payloadBlast.config.damage ?? GAME.upgrade.blastDamage)
+            + GAME.ball.levelBlastDamageBonus,
+        );
+        payloadBlast.config.radius = (payloadBlast.config.radius ?? GAME.upgrade.blastRadius)
+          + GAME.ball.levelBlastRadiusBonus;
+        const impact = payload.damageEffects.find(({ id }) => id === 'impact-blast');
+        if (impact) {
+          impact.config.damage = payloadBlast.config.damage;
+          impact.config.radius = payloadBlast.config.radius;
+        }
+        skillBonuses.blast = {
+          damage: payloadBlast.config.damage,
+          radius: payloadBlast.config.radius,
+        };
+      }
+      const payloadLightning = payload?.damageEffects?.find(({ id }) => id === 'chain-lightning');
+      if (payloadLightning) {
+        payloadLightning.config.damage = normalizeDamage(
+          (payloadLightning.config.damage ?? GAME.upgrade.lightningDamage)
+            + GAME.ball.levelLightningDamageBonus,
+        );
+        payloadLightning.config.additionalTargets = (
+          payloadLightning.config.additionalTargets ?? GAME.upgrade.lightningAdditionalTargets
+        ) + GAME.ball.levelLightningTargetBonus;
+        skillBonuses.lightning = {
+          damage: payloadLightning.config.damage,
+          additionalTargets: payloadLightning.config.additionalTargets,
+        };
+      }
+    }
+
     const lightningEffect = ball.damageEffects.find(({ id }) => id === 'chain-lightning');
     if (lightningEffect) {
       lightningEffect.config.damage = (lightningEffect.config.damage ?? GAME.upgrade.lightningDamage)
@@ -141,6 +178,25 @@ export class BallCombatSystem {
           ...template,
           id: `orbiter-level-${ball.level}-${ball.orbiters.length}`,
           visual: { ...template.visual },
+          payload: template.payload ? {
+            ...template.payload,
+            traits: new Set(template.payload.traits ?? []),
+            damageEffects: template.payload.damageEffects.map((effect) => ({
+              id: effect.id,
+              config: { ...effect.config },
+            })),
+            periodicEffects: template.payload.periodicEffects.map((effect) => ({
+              id: effect.id,
+              interval: effect.interval,
+              timeRemaining: effect.timeRemaining,
+              config: { ...effect.config },
+            })),
+            guidance: template.payload.guidance ? {
+              ...template.payload.guidance,
+              lunge: null,
+            } : null,
+          } : null,
+          positionOverride: null,
           brickContacts: new Set(),
         });
       }

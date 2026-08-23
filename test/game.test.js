@@ -6,13 +6,16 @@ import { GameEngine } from '../src/core/GameEngine.js';
 import { InputManager, mapPointerToElement } from '../src/core/InputManager.js';
 import { BreakoutScene } from '../src/game/BreakoutScene.js';
 import { GAME } from '../src/game/config.js';
+import { normalizeDamage, scaleDamage } from '../src/game/Damage.js';
 import { Brick } from '../src/game/entities/entities.js';
 import {
   BOSS_SHAPE_IDS,
+  BossShapeBag,
   calculateBrickSizeHealthMultiplier,
   calculateExpectedBrickHitPoints,
   calculateLateGamePressure,
   createBossPolygon,
+  getBossArchetype,
   selectBrickDimensions,
   selectBrickHitPoints,
   selectBossPolygon,
@@ -28,11 +31,13 @@ import {
   createDefaultBallDefinitions,
 } from '../src/game/balls/BallDefinitionRegistry.js';
 import { BallFactory } from '../src/game/balls/BallFactory.js';
-import { getOrbiterTrail } from '../src/game/balls/Orbiter.js';
+import { getOrbiterPosition, getOrbiterTrail } from '../src/game/balls/Orbiter.js';
 import { BallRendererRegistry, getBallLevelVisual } from '../src/game/balls/BallRendererRegistry.js';
 import { createDefaultBallEmitters } from '../src/game/emitters/BallEmitterRegistry.js';
 import {
   BallFusionRegistry,
+  FUSION_BALL_CATALOG,
+  FUSION_BALL_IDS,
   composeShotDescriptors,
 } from '../src/game/balls/BallFusionRegistry.js';
 import { BALL_TRAITS } from '../src/game/balls/BallTraits.js';
@@ -188,6 +193,67 @@ test('生存玩法可自动发球、击毁多边形且落球不结束游戏', ()
   breachingBrick.y = GAME.playBottom;
   scene.update(1 / 120);
   assert.equal(scene.state, 'lost');
+  scene.exit();
+});
+
+test('玩家可以主动结算当前对局，并只产生一次可上传的结束结果', () => {
+  const events = new EventBus();
+  const settled = [];
+  const finished = [];
+  const lost = [];
+  events.on('game:settled', (result) => settled.push(result));
+  events.on('game:finished', (result) => finished.push(result));
+  events.on('game:lost', (result) => lost.push(result));
+  const engine = { paused: true, setPaused(value) { this.paused = value; } };
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine,
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  scene.score = 240000000;
+  scene.brickField.elapsed = 1234.5;
+
+  const result = scene.settleRun();
+  assert.equal(scene.state, 'settled');
+  assert.equal(engine.paused, false);
+  assert.equal(result.score, 240000000);
+  assert.equal(result.elapsed, 1234.5);
+  assert.equal(result.reason, 'manual-settlement');
+  assert.equal(settled.length, 1);
+  assert.equal(finished.length, 1);
+  assert.equal(lost.length, 0);
+  assert.equal(scene.settleRun(), null);
+  assert.equal(finished.length, 1);
+  scene.exit();
+});
+
+test('所有实际伤害统一为非负整数', () => {
+  assert.equal(normalizeDamage(16.5), 17);
+  assert.equal(normalizeDamage(-3.2), 0);
+  assert.equal(normalizeDamage(Number.NaN), 0);
+  assert.equal(scaleDamage(11, 1.5), 17);
+
+  const events = new EventBus();
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  const ball = scene.ballFactory.createPrimary({ x: 100, y: 100, angle: 0 });
+  const brick = scene.world.first('brick');
+  brick.hitPoints = 100;
+  const result = scene.ballCombat.applyDamage({ ball, brick, damage: 16.5 });
+  assert.equal(result.damage, 17);
+  assert.equal(brick.hitPoints, 83);
+  assert.equal(Number.isInteger(brick.hitPoints), true);
   scene.exit();
 });
 
@@ -776,6 +842,258 @@ test('融合配方可组合发射、能力、数值、特征与视觉层', () =>
   assert.equal(fusionShot.shotType, 'top-void');
   assert.equal(fusionShot.source, 'fusion:top-void');
   assert.deepEqual(fusionShot.fusionComponents, ['top-launch', 'void-orbit']);
+});
+
+test('十种默认融合球内容完整注册，但不会在融合操作确定前进入自动发射池', () => {
+  const events = new EventBus();
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  Object.assign(scene.upgrades.levels, {
+    topLaunch: 1,
+    blastLaunch: 1,
+    voidOrbit: 1,
+    microNavigation: 1,
+    lightning: 1,
+  });
+  const components = scene.autoFire.availablePrimaryShots();
+  assert.equal(components.some(({ fusionId }) => fusionId), false);
+  assert.equal(scene.ballFusions.all().length, 10);
+  assert.deepEqual(
+    scene.ballFusions.all().map(({ metadata }) => metadata.name),
+    FUSION_BALL_CATALOG.map(({ name }) => name),
+  );
+  for (const entry of FUSION_BALL_CATALOG) {
+    const recipe = scene.ballFusions.get(entry.id);
+    const shot = scene.ballFusions.createShot(entry.id, components, { scene });
+    assert.equal(recipe.includeInAutomaticPool, false);
+    assert.equal(recipe.metadata.contentReady, true);
+    assert.equal(recipe.metadata.acquisitionPending, true);
+    assert.ok(shot, `${entry.name} 应能生成发射描述`);
+    assert.equal(shot.fusionId, entry.id);
+    assert.deepEqual(shot.fusionComponents, entry.components);
+    assert.ok(shot.visualLayers.some(({ id }) => id === 'fusion-signature'));
+  }
+  scene.exit();
+});
+
+test('虚空系融合将另一种特殊球做成子球载荷，核心不重复触发其伤害能力', () => {
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events: new EventBus(),
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  Object.assign(scene.upgrades.levels, {
+    topLaunch: 1,
+    blastLaunch: 1,
+    voidOrbit: 1,
+    microNavigation: 1,
+    lightning: 1,
+  });
+  const components = scene.autoFire.availablePrimaryShots();
+  const expectedPayloads = new Map([
+    [FUSION_BALL_IDS.TOP_VOID, 'zenith'],
+    [FUSION_BALL_IDS.BLAST_VOID, 'blast'],
+    [FUSION_BALL_IDS.VOID_NAVIGATION, 'navigation'],
+    [FUSION_BALL_IDS.VOID_LIGHTNING, 'lightning'],
+  ]);
+
+  for (const [fusionId, payloadType] of expectedPayloads) {
+    const shot = scene.ballFusions.createShot(fusionId, components, { scene });
+    const ball = scene.ballFactory.createPrimary({
+      ...shot,
+      x: 300,
+      y: 300,
+      angle: -Math.PI / 2,
+      speed: GAME.ball.speed,
+    });
+    assert.equal(ball.definitionId, VOID_ORBIT_BALL_ID);
+    assert.equal(ball.contactDamage, false);
+    assert.equal(ball.damageEffects.length, 0);
+    assert.equal(ball.periodicEffects.length, 0);
+    assert.equal(ball.guidance, null);
+    assert.equal(ball.orbiters.length, 2);
+    assert.ok(ball.orbiters.every(({ payload }) => payload?.type === payloadType));
+    assert.notEqual(ball.orbiters[0].payload, ball.orbiters[1].payload);
+    if (payloadType === 'blast') {
+      assert.ok(ball.orbiters.every(({ payload }) => payload.periodicEffects[0].id === 'area-blast'));
+      assert.notEqual(
+        ball.orbiters[0].payload.periodicEffects[0].timeRemaining,
+        ball.orbiters[1].payload.periodicEffects[0].timeRemaining,
+      );
+    } else if (payloadType === 'navigation') {
+      assert.ok(ball.orbiters.every(({ payload }) => payload.guidance));
+    } else if (payloadType === 'lightning') {
+      assert.ok(ball.orbiters.every(({ payload }) => (
+        payload.contactDamage === false
+        && payload.damageEffects[0].id === 'chain-lightning'
+      )));
+    }
+  }
+  scene.exit();
+});
+
+test('虚空爆裂在子球位置错峰爆炸，虚空导航子球可脱离轨道突进', () => {
+  const events = new EventBus();
+  const explosions = [];
+  events.on('ball:exploded', (payload) => explosions.push(payload));
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  Object.assign(scene.upgrades.levels, {
+    blastLaunch: 1,
+    voidOrbit: 1,
+    microNavigation: 1,
+  });
+  const components = scene.autoFire.availablePrimaryShots();
+  const createFusionBall = (fusionId) => {
+    const shot = scene.ballFusions.createShot(fusionId, components, { scene });
+    return scene.ballFactory.createPrimary({
+      ...shot,
+      x: 300,
+      y: 300,
+      angle: -Math.PI / 2,
+      speed: GAME.ball.speed,
+    });
+  };
+
+  const blast = createFusionBall(FUSION_BALL_IDS.BLAST_VOID);
+  scene.world.clear();
+  scene.world.add(blast);
+  scene.world.flush();
+  const blastOrigin = getOrbiterPosition(blast, blast.orbiters[0]);
+  blast.orbiters[0].payload.periodicEffects[0].timeRemaining = 0;
+  blast.orbiters[1].payload.periodicEffects[0].timeRemaining = 10;
+  scene.ballAbilities.update(0);
+  assert.equal(explosions.length, 1);
+  assert.equal(explosions[0].orbiter, blast.orbiters[0]);
+  assert.ok(
+    Math.abs(explosions[0].x - blastOrigin.x) < .0001,
+    `爆炸横坐标 ${explosions[0].x} 应位于子球 ${blastOrigin.x}`,
+  );
+  assert.ok(
+    Math.abs(explosions[0].y - blastOrigin.y) < .0001,
+    `爆炸纵坐标 ${explosions[0].y} 应位于子球 ${blastOrigin.y}`,
+  );
+
+  const navigation = createFusionBall(FUSION_BALL_IDS.VOID_NAVIGATION);
+  const natural = getOrbiterPosition(navigation, navigation.orbiters[0]);
+  const target = new Brick({
+    x: natural.x + 70,
+    y: natural.y - 10,
+    width: 24,
+    height: 24,
+    hitPoints: 999,
+  });
+  scene.world.add(navigation);
+  scene.world.add(target);
+  scene.world.flush();
+  scene.orbiterDamage.update(.1);
+  const lunging = getOrbiterPosition(navigation, navigation.orbiters[0]);
+  assert.ok(lunging.x > natural.x);
+  assert.ok(navigation.orbiters[0].payload.guidance.lunge);
+  scene.exit();
+});
+
+test('虚空融合子球继承双方衍生强化，并随核心等级一起成长', () => {
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events: new EventBus(),
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  Object.assign(scene.upgrades.levels, {
+    topLaunch: 1,
+    blastLaunch: 1,
+    voidOrbit: 1,
+    microNavigation: 1,
+    lightning: 1,
+  });
+  const components = scene.autoFire.availablePrimaryShots();
+  const createFusionBall = (fusionId) => {
+    const shot = scene.ballFusions.createShot(fusionId, components, { scene });
+    const ball = scene.ballFactory.createPrimary({
+      ...shot,
+      x: 300,
+      y: 300,
+      angle: -Math.PI / 2,
+      speed: GAME.ball.speed,
+    });
+    scene.world.add(ball);
+    return ball;
+  };
+  const zenith = createFusionBall(FUSION_BALL_IDS.TOP_VOID);
+  const zenithLightning = createFusionBall(FUSION_BALL_IDS.TOP_LIGHTNING);
+  const blast = createFusionBall(FUSION_BALL_IDS.BLAST_VOID);
+  const navigation = createFusionBall(FUSION_BALL_IDS.VOID_NAVIGATION);
+  const lightning = createFusionBall(FUSION_BALL_IDS.VOID_LIGHTNING);
+  scene.world.flush();
+  const chooseDirectly = (id) => {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+    assert.equal(scene.chooseUpgrade(id), true);
+  };
+
+  chooseDirectly('topImpact');
+  assert.ok(zenith.orbiters.every(({ payload }) => (
+    payload.damageMultiplier === scene.upgrades.topImpactDamageMultiplier
+  )));
+  assert.equal(
+    zenithLightning.damageEffects[0].config.damageMultiplier,
+    scene.upgrades.topImpactDamageMultiplier,
+  );
+  chooseDirectly('blastCooldown');
+  assert.ok(blast.orbiters.every(({ payload }) => (
+    payload.periodicEffects[0].interval === scene.upgrades.blastInterval
+  )));
+  chooseDirectly('blastImpact');
+  assert.ok(blast.orbiters.every(({ payload }) => (
+    payload.damageEffects.some(({ id }) => id === 'impact-blast')
+  )));
+  chooseDirectly('navigationStrength');
+  chooseDirectly('navigationReturn');
+  assert.ok(navigation.orbiters.every(({ payload }) => (
+    payload.guidance.strength === scene.upgrades.navigationStrength
+    && payload.guidance.returnStrikeChance === scene.upgrades.navigationReturnChance
+  )));
+  chooseDirectly('lightningJumps');
+  chooseDirectly('lightningStrike');
+  const lightningEffect = lightning.orbiters[0].payload.damageEffects[0];
+  assert.equal(lightningEffect.config.additionalTargets, scene.upgrades.lightningAdditionalTargets);
+  assert.equal(lightningEffect.config.strikeChance, scene.upgrades.lightningStrikeChance);
+
+  for (let index = 0; index < GAME.ball.levelKillThresholds[0]; index += 1) {
+    const brick = new Brick({ x: 0, y: 0, width: 20, height: 20, hitPoints: 1 });
+    scene.ballCombat.applyDamage({ ball: lightning, brick, damage: 1 });
+  }
+  assert.equal(lightning.level, 2);
+  assert.equal(lightning.orbiters.length, 3);
+  assert.equal(
+    lightning.orbiters[0].payload.damageEffects[0].config.damage,
+    GAME.upgrade.lightningDamage + GAME.ball.levelLightningDamageBonus,
+  );
+  assert.ok(lightning.orbiters.every(({ payload }) => payload.type === 'lightning'));
+  scene.exit();
 });
 
 test('普通方块尺寸采样偏向横向扁长并保留随机范围', () => {
@@ -1627,12 +1945,14 @@ test('每三分钟生成包含Boss和小方块的Boss波次', () => {
   assert.equal(bosses.length, 1);
   assert.equal(minions.length, GAME.brick.bossMinionCount);
   assert.equal(waves[0].wave, 1);
-  assert.equal(bosses[0].width, GAME.brick.bossWidth);
-  assert.equal(bosses[0].height, GAME.brick.bossHeight);
   assert.ok(BOSS_SHAPE_IDS.includes(bosses[0].bossShape));
+  const bossArchetype = getBossArchetype(bosses[0].bossShape);
+  assert.equal(bosses[0].width, Math.round(GAME.brick.bossWidth * bossArchetype.widthScale));
+  assert.equal(bosses[0].height, Math.round(GAME.brick.bossHeight * bossArchetype.heightScale));
+  assert.equal(bosses[0].color, bossArchetype.color);
   assert.deepEqual(
     bosses[0].points,
-    createBossPolygon(GAME.brick.bossWidth, GAME.brick.bossHeight, bosses[0].bossShape),
+    createBossPolygon(bosses[0].width, bosses[0].height, bosses[0].bossShape),
   );
   assert.ok(bosses[0].points.length >= 6);
   assert.ok(bosses[0].maxHitPoints > Math.max(...minions.map((brick) => brick.maxHitPoints)));
@@ -1659,6 +1979,9 @@ test('第五个 Boss 起终局压力按波次复合增长', () => {
   assert.ok(fifth.healthMultiplier > 1);
   assert.ok(sixth.healthMultiplier > fifth.healthMultiplier);
   assert.ok(seventh.spawnIntervalMultiplier < sixth.spawnIntervalMultiplier);
+  assert.equal(fifth.bossHealthMultiplier, 4);
+  assert.equal(sixth.bossHealthMultiplier, 16);
+  assert.equal(seventh.bossHealthMultiplier, 64);
   assert.equal(fifth.additionalBossMinions, 2);
   assert.equal(seventh.additionalBossMinions, GAME.brick.lateGame.bossMinionBonusCap);
 
@@ -1666,6 +1989,17 @@ test('第五个 Boss 起终局压力按波次复合增长', () => {
   const justBefore = calculateExpectedBrickHitPoints({ elapsed: interval * 5 - .01, score });
   const atFifth = calculateExpectedBrickHitPoints({ elapsed: interval * 5, score });
   assert.ok(atFifth > justBefore * 1.35);
+
+  const highScoreExpectedHp = calculateExpectedBrickHitPoints({
+    elapsed: interval * 7,
+    score: 240000000,
+  });
+  const seventhBossHp = Math.ceil(
+    highScoreExpectedHp
+      * GAME.brick.bossHealthMultiplier
+      * seventh.bossHealthMultiplier,
+  );
+  assert.ok(seventhBossHp > 5000000);
 });
 
 test('Boss 波次可随机选择多套对称凸多边形轮廓', () => {
@@ -1694,6 +2028,31 @@ test('Boss 波次可随机选择多套对称凸多边形轮廓', () => {
     });
     assert.ok(turns.every((turn) => turn > 0) || turns.every((turn) => turn < 0));
   }
+});
+
+test('Boss 轮换袋保证四种造型逐轮出现且不跨轮重复', () => {
+  const bag = new BossShapeBag(() => 0);
+  const sequence = Array.from({ length: BOSS_SHAPE_IDS.length * 3 }, () => bag.next());
+  for (let offset = 0; offset < sequence.length; offset += BOSS_SHAPE_IDS.length) {
+    assert.deepEqual(
+      [...new Set(sequence.slice(offset, offset + BOSS_SHAPE_IDS.length))].sort(),
+      [...BOSS_SHAPE_IDS].sort(),
+    );
+  }
+  for (let index = 1; index < sequence.length; index += 1) {
+    assert.notEqual(sequence[index], sequence[index - 1]);
+  }
+});
+
+test('Boss 原型具有明显不同的尺寸、颜色、装甲与标记', () => {
+  const archetypes = BOSS_SHAPE_IDS.map((id) => getBossArchetype(id));
+  assert.equal(new Set(archetypes.map(({ color }) => color)).size, BOSS_SHAPE_IDS.length);
+  assert.equal(new Set(archetypes.map(({ sigil }) => sigil)).size, BOSS_SHAPE_IDS.length);
+  assert.equal(new Set(archetypes.map(({ label }) => label)).size, BOSS_SHAPE_IDS.length);
+  assert.equal(
+    new Set(archetypes.map(({ widthScale, heightScale }) => `${widthScale}:${heightScale}`)).size,
+    BOSS_SHAPE_IDS.length,
+  );
 });
 
 test('场上方块清空后立即在顶部补充一整排', () => {
@@ -1939,6 +2298,29 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
   scene.exit();
 });
 
+test('动能超频最多强化三级，满级后退出随机池', () => {
+  assert.equal(GAME.upgrade.ballSpeedMaxLevel, 3);
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events: new EventBus(),
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+  for (let level = 0; level < GAME.upgrade.ballSpeedMaxLevel; level += 1) {
+    scene.upgrades.waitingForChoice = true;
+    scene.upgrades.pendingChoices = 1;
+    scene.state = 'upgrading';
+    assert.equal(scene.chooseUpgrade('ballSpeed'), true);
+  }
+  assert.equal(scene.upgrades.levels.ballSpeed, 3);
+  assert.equal(scene.upgrades.isAvailable('ballSpeed'), false);
+  assert.equal(scene.upgrades.options().some(({ id }) => id === 'ballSpeed'), false);
+  scene.exit();
+});
+
 test('强化图鉴可预选自动升级，命中随机三选一时不暂停并自动完成选择', () => {
   const events = new EventBus();
   const scene = new BreakoutScene();
@@ -2030,6 +2412,7 @@ test('新增特殊球衍生强化会作用于现有球和未来发射配置', ()
   };
 
   chooseDirectly('topLaunch');
+  chooseDirectly('ballDamage');
   chooseDirectly('topImpact');
   scene.autoFire.random = () => .99;
   scene.autoFire.timeUntilShot = 0;
@@ -2037,7 +2420,22 @@ test('新增特殊球衍生强化会作用于现有球和未来发射配置', ()
   const topBall = scene.world.all('ball').find(({ launchSource }) => launchSource === 'top-launch');
   assert.equal(
     topBall.damage,
-    GAME.combat.baseDamage * scene.upgrades.topImpactDamageMultiplier,
+    Math.round(
+      (GAME.combat.baseDamage + GAME.upgrade.ballDamagePerLevel)
+        * scene.upgrades.topImpactDamageMultiplier,
+    ),
+  );
+  assert.equal(Number.isInteger(topBall.damage), true);
+
+  chooseDirectly('topImpact');
+  assert.equal(
+    topBall.damage,
+    Math.round(topBall.baseDamage * scene.upgrades.topImpactDamageMultiplier),
+  );
+  chooseDirectly('topImpact');
+  assert.equal(
+    topBall.damage,
+    Math.round(topBall.baseDamage * scene.upgrades.topImpactDamageMultiplier),
   );
 
   chooseDirectly('voidOrbit');

@@ -216,7 +216,8 @@ export class AutoFireSystem {
       lives: this.scene.upgrades.newBallLives,
       damageOverride: definition.contactDamage === false
         ? definition.damage
-        : (definition.damage + this.scene.upgrades.ballDamageBonus) * damageMultiplier,
+        : definition.damage + this.scene.upgrades.ballDamageBonus,
+      damageMultiplier: definition.contactDamage === false ? 1 : damageMultiplier,
       launchSource: source, traits, fusionId, fusionComponents,
       visualOverrides, visualLayers, periodicEffects, damageEffects,
       orbitingDamageOverrides, guidanceOverrides, damageEffectConfigOverrides,

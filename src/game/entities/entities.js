@@ -1,5 +1,10 @@
 import { Entity } from '../../core/Entity.js';
 import { GAME } from '../config.js';
+import {
+  normalizeDamage,
+  normalizeDamageMultiplier,
+  scaleDamage,
+} from '../Damage.js';
 
 export class Paddle extends Entity {
   constructor({ role = 'primary', x, y, width, height } = {}) {
@@ -32,6 +37,7 @@ export class Ball extends Entity {
     kills = 0,
     radius = GAME.ball.radius,
     damage = GAME.combat.baseDamage,
+    damageMultiplier = 1,
     damageType = 'kinetic',
     contactDamage = true,
     damageEffects = [],
@@ -42,6 +48,8 @@ export class Ball extends Entity {
     orbiters = [],
     visual = {},
   } = {}) {
+    const baseDamage = normalizeDamage(damage);
+    const contactDamageMultiplier = normalizeDamageMultiplier(damageMultiplier);
     super('ball', {
       tags: ['collidable', 'projectile', role],
       definitionId,
@@ -59,7 +67,9 @@ export class Ball extends Entity {
       velocityX: Math.cos(angle) * speed,
       velocityY: Math.sin(angle) * speed,
       speed,
-      damage,
+      baseDamage,
+      contactDamageMultiplier,
+      damage: scaleDamage(baseDamage, contactDamageMultiplier),
       damageType,
       contactDamage,
       damageEffects: damageEffects.map((effect) => (
@@ -86,8 +96,35 @@ export class Ball extends Entity {
       } : null,
       orbiters: orbiters.map((orbiter, index) => ({
         ...orbiter,
+        damage: normalizeDamage(orbiter.damage),
         id: orbiter.id ?? `orbiter-${index}`,
         visual: { ...(orbiter.visual ?? {}) },
+        payload: orbiter.payload ? {
+          ...orbiter.payload,
+          traits: new Set(orbiter.payload.traits ?? []),
+          damageEffects: (orbiter.payload.damageEffects ?? []).map((effect) => ({
+            id: effect.id,
+            config: { ...(effect.config ?? {}) },
+          })),
+          periodicEffects: (orbiter.payload.periodicEffects ?? []).map((effect) => {
+            const interval = Math.max(.05, effect.interval ?? 1);
+            const initialDelay = Math.max(0, effect.initialDelay ?? interval);
+            return {
+              id: effect.id,
+              interval,
+              timeRemaining: initialDelay + (effect.stagger === false
+                ? 0
+                : index * interval / Math.max(1, orbiters.length)),
+              config: { ...(effect.config ?? {}) },
+            };
+          }),
+          guidance: orbiter.payload.guidance ? {
+            ...orbiter.payload.guidance,
+            cooldownRemaining: index * .12,
+            lunge: null,
+          } : null,
+        } : null,
+        positionOverride: null,
         brickContacts: new Set(),
       })),
       visual: { ...visual },
@@ -104,6 +141,7 @@ export class Ball extends Entity {
 
 export class Brick extends Entity {
   constructor({ x, y, width, height, points, hitPoints = GAME.combat.baseHealth, color, score = 100, variant = 'normal', bossShape = null }) {
+    const normalizedHitPoints = Math.max(1, normalizeDamage(hitPoints));
     super('brick', {
       tags: ['collidable', 'breakable'],
       x, y, width, height,
@@ -111,7 +149,7 @@ export class Brick extends Entity {
         { x: 0, y: 0 }, { x: width, y: 0 },
         { x: width, y: height }, { x: 0, y: height },
       ],
-      hitPoints, maxHitPoints: hitPoints, color, score,
+      hitPoints: normalizedHitPoints, maxHitPoints: normalizedHitPoints, color, score,
       variant,
       bossShape,
       hitFlash: 0,
@@ -119,7 +157,7 @@ export class Brick extends Entity {
   }
 
   damage(amount = GAME.combat.baseDamage) {
-    this.hitPoints -= amount;
+    this.hitPoints -= normalizeDamage(amount);
     this.hitFlash = 1;
     if (this.hitPoints <= 0) this.destroy();
     return !this.active;

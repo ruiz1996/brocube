@@ -1,5 +1,20 @@
 import { Brick } from '../entities/entities.js';
 import { GAME } from '../config.js';
+import {
+  BOSS_SHAPE_IDS,
+  BossShapeBag,
+  createBossPolygon,
+  getBossArchetype,
+  selectBossPolygon,
+} from '../bosses/BossCatalog.js';
+
+export {
+  BOSS_SHAPE_IDS,
+  BossShapeBag,
+  createBossPolygon,
+  getBossArchetype,
+  selectBossPolygon,
+} from '../bosses/BossCatalog.js';
 
 const PALETTE = ['#55e8ff', '#718bff', '#9b6cff', '#d760dc', '#ff5cab', '#ff796d', '#ffad5a'];
 const randomBetween = (min, max) => min + Math.random() * (max - min);
@@ -40,43 +55,6 @@ function randomPolygon(width, height) {
     });
   }
   return convexHull(candidates);
-}
-
-export const BOSS_SHAPE_IDS = Object.freeze([
-  'fortress',
-  'prism',
-  'bulwark',
-  'ram',
-]);
-
-const BOSS_SHAPE_POINTS = Object.freeze({
-  fortress: [
-    [.32, 0], [.68, 0], [.88, .12], [1, .42], [.92, .82],
-    [.68, 1], [.32, 1], [.08, .82], [0, .42], [.12, .12],
-  ],
-  prism: [
-    [.5, 0], [.82, .08], [1, .5], [.82, .92],
-    [.5, 1], [.18, .92], [0, .5], [.18, .08],
-  ],
-  bulwark: [
-    [.22, 0], [.78, 0], [1, .25], [.92, .68],
-    [.5, 1], [.08, .68], [0, .25],
-  ],
-  ram: [
-    [.18, 0], [.82, 0], [1, .5],
-    [.82, 1], [.18, 1], [0, .5],
-  ],
-});
-
-export function createBossPolygon(width, height, shapeId = BOSS_SHAPE_IDS[0]) {
-  const normalizedPoints = BOSS_SHAPE_POINTS[shapeId] ?? BOSS_SHAPE_POINTS.fortress;
-  return normalizedPoints.map(([x, y]) => ({ x: x * width, y: y * height }));
-}
-
-export function selectBossPolygon(width, height, random = Math.random) {
-  const index = Math.min(BOSS_SHAPE_IDS.length - 1, Math.floor(random() * BOSS_SHAPE_IDS.length));
-  const shapeId = BOSS_SHAPE_IDS[index];
-  return { shapeId, points: createBossPolygon(width, height, shapeId) };
 }
 
 export function selectBrickDimensions(random = Math.random, bounds = GAME.brick) {
@@ -156,10 +134,12 @@ export function selectBrickHitPoints({ elapsed, score, width, height }, random =
 export class BrickFieldSystem {
   constructor(scene) {
     this.scene = scene;
+    this.bossShapeBag = new BossShapeBag();
     this.elapsed = 0;
     this.spawnTimer = 1;
     this.breached = false;
     this.nextBossWave = GAME.brick.bossWaveInterval;
+    this.bossShapeBag.reset();
   }
 
   reset() {
@@ -258,22 +238,24 @@ export class BrickFieldSystem {
     const hitPoints = Math.max(1, Math.ceil(
       expectedHp * GAME.brick.bossHealthMultiplier * latePressure.bossHealthMultiplier,
     ));
-    const width = GAME.brick.bossWidth;
-    const height = GAME.brick.bossHeight;
-    const bossPolygon = selectBossPolygon(width, height);
+    const bossShape = this.bossShapeBag.next();
+    const archetype = getBossArchetype(bossShape);
+    const width = Math.round(GAME.brick.bossWidth * archetype.widthScale);
+    const height = Math.round(GAME.brick.bossHeight * archetype.heightScale);
+    const bossPolygon = createBossPolygon(width, height, bossShape);
     const boss = this.#spawnBrick(4, GAME.playTop + 16, {
       width,
       height,
       x: (GAME.width - width) / 2,
       hitPoints,
-      color: '#ff3f8f',
+      color: archetype.color,
       score: scoreForHealth(
         calculateRewardHitPoints(hitPoints, lateBossHealthMultiplier),
         GAME.brick.bossScoreMultiplier,
       ),
       variant: 'boss',
-      bossShape: bossPolygon.shapeId,
-      points: bossPolygon.points,
+      bossShape,
+      points: bossPolygon,
     });
 
     const minionLanes = [0, 1, 7, 8, 2, 6];

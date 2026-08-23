@@ -1,4 +1,5 @@
 import { GAME } from '../config.js';
+import { scaleDamage } from '../Damage.js';
 
 function reflectBall(ball, normal) {
   const dot = ball.velocityX * normal.nx + ball.velocityY * normal.ny;
@@ -61,14 +62,19 @@ export class BallBehaviorRegistry {
 export function createDefaultBallBehaviors() {
   const registry = new BallBehaviorRegistry();
 
-  const explode = ({ scene, combat, ball, effectConfig, cause }) => {
+  const explode = ({ scene, combat, ball, effectConfig, cause, origin = null, orbiter = null }) => {
     const radius = Math.max(1, effectConfig.radius ?? 120);
-    const damage = Math.max(0, effectConfig.damage ?? GAME.combat.baseDamage);
+    const damage = scaleDamage(
+      effectConfig.damage ?? GAME.combat.baseDamage,
+      effectConfig.damageMultiplier ?? 1,
+    );
+    const x = origin?.x ?? ball.x;
+    const y = origin?.y ?? ball.y;
     const hitBricks = [];
     for (const brick of scene.world.all('brick')) {
       const centerX = brick.x + brick.width / 2;
       const centerY = brick.y + brick.height / 2;
-      if (Math.hypot(centerX - ball.x, centerY - ball.y) > radius) continue;
+      if (Math.hypot(centerX - x, centerY - y) > radius) continue;
       combat.applyDamage({
         ball,
         brick,
@@ -80,14 +86,15 @@ export function createDefaultBallBehaviors() {
     }
     const payload = {
       ball,
-      x: ball.x,
-      y: ball.y,
+      x,
+      y,
       radius,
       damage,
       hitBricks,
       color: effectConfig.color ?? '#ff5cab',
       secondaryColor: effectConfig.secondaryColor ?? '#9b6cff',
       cause,
+      orbiter,
     };
     scene.events.emit('ball:exploded', payload);
     return payload;
@@ -135,22 +142,25 @@ export function createDefaultBallBehaviors() {
     return { action: 'split', derivedBalls: created };
   });
 
-  registry.registerPeriodicEffect('area-blast', ({ scene, combat, ball, effectConfig }) => {
-    return explode({ scene, combat, ball, effectConfig, cause: 'periodic-explosion' });
+  registry.registerPeriodicEffect('area-blast', ({ scene, combat, ball, effectConfig, origin, orbiter }) => {
+    return explode({ scene, combat, ball, effectConfig, cause: 'periodic-explosion', origin, orbiter });
   });
 
-  registry.registerDamageEffect('impact-blast', ({ scene, combat, ball, effectConfig }) => {
+  registry.registerDamageEffect('impact-blast', ({ scene, combat, ball, effectConfig, origin, orbiter }) => {
     const chance = Math.max(0, Math.min(1, effectConfig.chance ?? 0));
     if (registry.random() >= chance) return null;
-    return explode({ scene, combat, ball, effectConfig, cause: 'impact-explosion' });
+    return explode({ scene, combat, ball, effectConfig, cause: 'impact-explosion', origin, orbiter });
   });
 
-  registry.registerDamageEffect('chain-lightning', ({ scene, combat, ball, brick, effectConfig }) => {
-    const damage = Math.max(0, effectConfig.damage ?? GAME.combat.baseDamage);
+  registry.registerDamageEffect('chain-lightning', ({ scene, combat, ball, brick, effectConfig, origin }) => {
+    const damage = scaleDamage(
+      effectConfig.damage ?? GAME.combat.baseDamage,
+      effectConfig.damageMultiplier ?? 1,
+    );
     const additionalTargets = Math.max(0, Math.round(effectConfig.additionalTargets ?? 1));
     const range = Math.max(1, effectConfig.range ?? 160);
     const targets = [brick];
-    const points = [{ x: ball.x, y: ball.y }];
+    const points = [{ x: origin?.x ?? ball.x, y: origin?.y ?? ball.y }];
     let previous = brick;
 
     for (let index = 0; index <= additionalTargets; index += 1) {

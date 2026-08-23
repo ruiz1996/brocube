@@ -181,7 +181,9 @@ scene.registerBallFusion('top-void', {
 
 - **发射类**：高速装填最多 5 级；分裂发射最多 10 级，满级后解锁二连发，使每轮两颗球分别从普通球与全部已解锁特殊球中独立抽取；五连速射每级增加 5% 触发率，最多 3 级。
 - **挡板与生存类**：双重挡板最多 3 级，副挡板依次获得主挡板 33%、66%、100% 的宽度；生命增幅最多 2 级；延展力场最多 5 级；底线回响最多 3 级。
-- **数值类**：动能超频最多 10 级；攻击强化最多 99 级且以低权重进入候选池。
+- **数值类**：动能超频最多 3 级；攻击强化最多 99 级且以低权重进入候选池。
+
+玩家可以在“玩家与排行榜”面板中点击“结束本局并上传”，主动结束当前对局并立即保存成绩，无需等待方块突破防线。按钮会在非对局状态下禁用，提交前会再次确认。
 - **天顶增援**：与普通球等概率替代发射；天顶续航提高触底保留率，天顶冲击按其 200% 发射速度逐级转化碰撞伤害，两项均最多 3 级。
 - **爆裂核心**：与普通球等概率替代发射；爆裂增压缩短周期爆炸间隔，爆裂触发增加碰撞时额外爆炸概率，两项均最多 3 级。
 - **虚空双星**：虚空超旋提高子球公转速度，虚空扩轨扩大子球旋转半径，两项均最多 3 级。
@@ -199,6 +201,6 @@ scene.registerBallFusion('top-void', {
 - **UI/成就/存档**：订阅事件总线，避免把平台能力写进物理或实体代码。
 - **多球**：物理层已经按球集合运行；主球用 `ballFactory.createPrimary()`，分裂等衍生小球只用 `ballFactory.createDerived()`。
 
-现有事件包括 `game:started`、`game:stats`、`game:lost`、`ball:launched`、`ball:loadout-changed`、`ball:split`、`ball:exploded`、`ball:lightning-chain`、`ball:lightning-strike`、`ball:navigation-return`、`ball:bounce`、`ball:lost`、`upgrade:offered`、`upgrade:selected`、`upgrade:auto-changed`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`brick:wave-refilled`、`boss:wave`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
+现有事件包括 `game:started`、`game:stats`、`game:lost`、`game:settled`、`game:finished`、`leaderboard:run-submitted`、`leaderboard:run-submit-failed`、`ball:launched`、`ball:loadout-changed`、`ball:split`、`ball:exploded`、`ball:lightning-chain`、`ball:lightning-strike`、`ball:navigation-return`、`ball:bounce`、`ball:lost`、`upgrade:offered`、`upgrade:selected`、`upgrade:auto-changed`、`brick:hit`、`brick:damaged`、`brick:destroyed`、`brick:breached`、`brick:wave-refilled`、`boss:wave`、`combo:changed`、`combo:ended`、`engine:paused` 和 `engine:resumed`。
 
 开发控制台可通过 `window.breakout.engine` 与 `window.breakout.scene` 检查运行状态或挂载临时实验代码。

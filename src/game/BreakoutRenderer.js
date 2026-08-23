@@ -1,4 +1,5 @@
 import { COLORS, GAME } from './config.js';
+import { getBossArchetype } from './bosses/BossCatalog.js';
 
 export class BreakoutRenderer {
   constructor(scene) { this.scene = scene; }
@@ -42,6 +43,7 @@ export class BreakoutRenderer {
     const points = brick.worldPoints();
     const centerX = points.reduce((sum, point) => sum + point.x, 0) / points.length;
     const centerY = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+    const bossVisual = brick.variant === 'boss' ? getBossArchetype(brick.bossShape) : null;
     ctx.save();
     ctx.shadowColor = brick.color;
     ctx.shadowBlur = 10 + brick.hitFlash * 20;
@@ -60,14 +62,14 @@ export class BreakoutRenderer {
 
     if (brick.variant === 'boss') {
       const armorPoints = points.map((point) => ({
-        x: centerX + (point.x - centerX) * .72,
-        y: centerY + (point.y - centerY) * .68,
+        x: centerX + (point.x - centerX) * bossVisual.armorScaleX,
+        y: centerY + (point.y - centerY) * bossVisual.armorScaleY,
       }));
-      ctx.shadowColor = '#fff0f7';
+      ctx.shadowColor = bossVisual.accent;
       ctx.shadowBlur = 18;
-      ctx.strokeStyle = 'rgba(255, 240, 247, .82)';
+      ctx.strokeStyle = bossVisual.accent;
       ctx.lineWidth = 1.2;
-      ctx.setLineDash([8, 5]);
+      ctx.setLineDash(bossVisual.dash);
       this.#polygonPath(ctx, points);
       ctx.stroke();
       ctx.setLineDash([]);
@@ -77,13 +79,13 @@ export class BreakoutRenderer {
       this.#polygonPath(ctx, armorPoints);
       ctx.fill();
       ctx.globalAlpha = .86;
-      ctx.strokeStyle = '#ffb1d4';
+      ctx.strokeStyle = bossVisual.accent;
       ctx.lineWidth = 1.4;
       this.#polygonPath(ctx, armorPoints);
       ctx.stroke();
 
       ctx.globalAlpha = .58;
-      ctx.strokeStyle = '#fff0f7';
+      ctx.strokeStyle = bossVisual.accent;
       ctx.lineWidth = 1;
       for (let index = 0; index < points.length; index += 2) {
         ctx.beginPath();
@@ -102,18 +104,19 @@ export class BreakoutRenderer {
         centerY,
         coreRadius,
       );
-      core.addColorStop(0, '#ffffff');
-      core.addColorStop(.28, '#ffb1d4');
-      core.addColorStop(1, 'rgba(255, 63, 143, .08)');
+      core.addColorStop(0, bossVisual.coreColor);
+      core.addColorStop(.28, bossVisual.accent);
+      core.addColorStop(1, 'rgba(255, 255, 255, .04)');
       ctx.fillStyle = core;
       ctx.beginPath();
       ctx.arc(centerX, centerY, coreRadius, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#fff0f7';
+      ctx.strokeStyle = bossVisual.accent;
       ctx.lineWidth = 1.3;
       ctx.beginPath();
       ctx.arc(centerX, centerY, coreRadius * 1.35, 0, Math.PI * 2);
       ctx.stroke();
+      this.#bossSigil(ctx, bossVisual.sigil, centerX, centerY, brick.width, brick.height);
     }
 
     ctx.shadowBlur = 12;
@@ -126,8 +129,8 @@ export class BreakoutRenderer {
     ctx.textBaseline = 'middle';
     if (brick.variant === 'boss') {
       ctx.font = '700 10px "Space Mono", monospace';
-      ctx.fillStyle = '#fff0f7';
-      ctx.fillText('BOSS', centerX, centerY - 17);
+      ctx.fillStyle = bossVisual.accent;
+      ctx.fillText(bossVisual.label, centerX, centerY - 18);
       ctx.font = `700 ${fontSize}px "Space Mono", monospace`;
       ctx.fillStyle = brick.color;
       ctx.fillText(String(brick.hitPoints), centerX, centerY + 9);
@@ -206,6 +209,35 @@ export class BreakoutRenderer {
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(wave.x, wave.y, radius * .72, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  #bossSigil(ctx, sigil, centerX, centerY, width, height) {
+    const radius = Math.min(width, height) * .28;
+    ctx.save();
+    ctx.globalAlpha = .82;
+    ctx.lineWidth = 1.6;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    if (sigil === 'cross') {
+      ctx.moveTo(centerX - radius, centerY); ctx.lineTo(centerX + radius, centerY);
+      ctx.moveTo(centerX, centerY - radius * .72); ctx.lineTo(centerX, centerY + radius * .72);
+    } else if (sigil === 'diamond') {
+      ctx.moveTo(centerX, centerY - radius);
+      ctx.lineTo(centerX + radius, centerY);
+      ctx.lineTo(centerX, centerY + radius);
+      ctx.lineTo(centerX - radius, centerY);
+      ctx.closePath();
+    } else if (sigil === 'chevron') {
+      ctx.moveTo(centerX - radius, centerY - radius * .32);
+      ctx.lineTo(centerX, centerY + radius * .55);
+      ctx.lineTo(centerX + radius, centerY - radius * .32);
+    } else {
+      ctx.arc(centerX - radius * .62, centerY, radius * .68, -.9, .9);
+      ctx.moveTo(centerX + radius * 1.04, centerY - radius * .52);
+      ctx.arc(centerX + radius * .62, centerY, radius * .68, Math.PI - .9, Math.PI + .9);
+    }
     ctx.stroke();
     ctx.restore();
   }

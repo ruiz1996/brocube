@@ -10,7 +10,7 @@ export const ComboPlugin = {
     this.unsubscribers = [
       events.on('brick:destroyed', () => this.registerKill()),
       events.on('game:started', () => this.reset()),
-      events.on('game:lost', () => this.reset()),
+      events.on('game:finished', () => this.reset()),
     ];
   },
 

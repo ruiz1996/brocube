@@ -33,6 +33,13 @@ function normalizeOrbitingDamage(config) {
     phaseOffset: config.phaseOffset ?? 0,
     damage: Math.max(0, config.damage ?? GAME.combat.baseDamage),
     damageType: config.damageType ?? 'kinetic',
+    payload: config.payload ? {
+      ...config.payload,
+      traits: normalizeTraits(config.payload.traits),
+      damageEffects: (config.payload.damageEffects ?? []).map(normalizeDamageEffect),
+      periodicEffects: (config.payload.periodicEffects ?? []).map(normalizePeriodicEffect),
+      guidance: config.payload.guidance ? { ...config.payload.guidance } : null,
+    } : null,
     visual: {
       color: '#9b6cff',
       coreColor: '#ffffff',

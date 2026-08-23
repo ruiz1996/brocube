@@ -49,7 +49,7 @@ export class GameUI {
   #bind() {
     const { events } = this.engine;
     this.primary.addEventListener('click', () => {
-      if (['idle', 'lost'].includes(this.scene.state)) this.scene.startNewGame();
+      if (['idle', 'lost', 'settled'].includes(this.scene.state)) this.scene.startNewGame();
       else if (this.engine.paused) this.engine.setPaused(false);
       this.#hideOverlay();
     });
@@ -79,6 +79,23 @@ export class GameUI {
     events.on('game:stats', (data) => this.updateStats(data));
     events.on('game:started', (data) => { this.updateStats(data); this.#hideOverlay(); this.#hideUpgrades(); });
     events.on('game:lost', (data) => { this.#hideUpgrades(); this.#showOverlay('DEFENSE BREACHED', '防线失守', `坚持了 ${this.#formatTime(data.elapsed)}，最终得分 ${String(Math.round(data.score)).padStart(6, '0')}。`, '重新开始'); });
+    events.on('game:settled', (data) => {
+      this.#hideUpgrades();
+      this.#showOverlay(
+        'RUN SECURED',
+        '本局已主动结算',
+        `坚持了 ${this.#formatTime(data.elapsed)}，结算得分 ${String(Math.round(data.score)).padStart(6, '0')}。正在上传成绩…`,
+        '开始新游戏',
+      );
+    });
+    events.on('leaderboard:run-submitted', ({ result }) => {
+      if (result.reason !== 'manual-settlement' || this.scene.state !== 'settled') return;
+      this.copy.textContent = `坚持了 ${this.#formatTime(result.elapsed)}，结算得分 ${String(Math.round(result.score)).padStart(6, '0')}。成绩已保存到排行榜。`;
+    });
+    events.on('leaderboard:run-submit-failed', ({ result, error }) => {
+      if (result.reason !== 'manual-settlement' || this.scene.state !== 'settled') return;
+      this.copy.textContent = `本局已结算，但成绩上传失败：${error.message}`;
+    });
     events.on('engine:paused', () => this.#showOverlay('SYSTEM PAUSED', '游戏暂停', '能量场已冻结，准备好后继续。', '继续游戏'));
     events.on('engine:resumed', () => { if (this.scene.state === 'playing') this.#hideOverlay(); });
     events.on('brick:destroyed', ({ brick }) => this.audio.play(

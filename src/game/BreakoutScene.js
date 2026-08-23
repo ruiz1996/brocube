@@ -68,6 +68,20 @@ export class BreakoutScene {
     this.events.emit('game:stats', this.snapshot());
   }
 
+  settleRun() {
+    if (!['playing', 'upgrading'].includes(this.state)) return null;
+    this.state = 'settled';
+    this.engine.setPaused(false);
+    const result = {
+      ...this.snapshot(),
+      elapsed: this.brickField.elapsed,
+      reason: 'manual-settlement',
+    };
+    this.events.emit('game:settled', result);
+    this.events.emit('game:finished', result);
+    return result;
+  }
+
   update(dt) {
     if (this.state !== 'playing') return;
     for (const system of this.systems) {
@@ -136,7 +150,14 @@ export class BreakoutScene {
   #onBrickBreached({ brick, elapsed }) {
     if (this.state !== 'playing') return;
     this.state = 'lost';
-    this.events.emit('game:lost', { ...this.snapshot(), elapsed, breachedBrick: brick });
+    const result = {
+      ...this.snapshot(),
+      elapsed,
+      breachedBrick: brick,
+      reason: 'brick-breached',
+    };
+    this.events.emit('game:lost', result);
+    this.events.emit('game:finished', result);
   }
 
   exit() {
