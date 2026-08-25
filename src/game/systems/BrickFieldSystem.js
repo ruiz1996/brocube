@@ -117,11 +117,13 @@ export function calculateExpectedBrickHitPoints(
     + formula.timeCoefficient * minutes ** formula.timeExponent
     + formula.scoreCoefficient * normalizedScore ** formula.scoreExponent;
   const worldModifiers = calculateWorldLevelModifiers(worldLevel);
+  const healthMultiplier = brickConfig.healthMultiplier ?? 1;
   return clampWorldValue(
     baseHitPoints
       * calculateLateGamePressure(elapsed, brickConfig).healthMultiplier
-      * worldModifiers.enemyHealthMultiplier,
-    formula.minHp ?? 1,
+      * worldModifiers.enemyHealthMultiplier
+      * healthMultiplier,
+    Math.max(1, (formula.minHp ?? 1) * healthMultiplier),
   );
 }
 
@@ -153,10 +155,11 @@ export function selectBrickHitPoints({ elapsed, score, worldLevel, width, height
   const formula = GAME.brick.healthFormula;
   const expected = calculateExpectedBrickHitPoints({ elapsed, score, worldLevel }, formula);
   const sizeMultiplier = calculateBrickSizeHealthMultiplier({ width, height }, GAME.brick, formula);
-  const variation = (random() * 2 - 1) * formula.randomSpread;
+  const healthMultiplier = GAME.brick.healthMultiplier ?? 1;
+  const variation = (random() * 2 - 1) * formula.randomSpread * healthMultiplier;
   return Math.round(clampWorldValue(
     expected * sizeMultiplier + variation,
-    formula.minHp,
+    Math.max(1, formula.minHp * healthMultiplier),
   ));
 }
 
@@ -346,6 +349,7 @@ export class BrickFieldSystem {
             worldModifiers.enemyHealthMultiplier
               * worldModifiers.bossHealthMultiplier
               * entryMultiplier
+              * (GAME.brick.healthMultiplier ?? 1)
           ),
           lateBossHealthMultiplier,
         ),
@@ -414,7 +418,10 @@ export class BrickFieldSystem {
       color: options.color ?? PALETTE[Math.floor(Math.random() * PALETTE.length)],
       score: options.score ?? scoreForHealth(
         calculateRewardHitPoints(
-          hitPoints / worldModifiers.enemyHealthMultiplier,
+          hitPoints / (
+            worldModifiers.enemyHealthMultiplier
+              * (GAME.brick.healthMultiplier ?? 1)
+          ),
           lateHealthMultiplier,
         ),
         worldModifiers.scoreMultiplier,

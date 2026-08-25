@@ -24,7 +24,6 @@ const UPGRADE_IDS = [
   'lightning',
   'lightningJumps',
   'lightningStrike',
-  'ballSpeed',
   'ballDamage',
   'ballLives',
   'paddleLength',
@@ -66,7 +65,6 @@ const UPGRADE_MAX_LEVEL_KEYS = {
   lightning: 'lightningMaxLevel',
   lightningJumps: 'lightningJumpsMaxLevel',
   lightningStrike: 'lightningStrikeMaxLevel',
-  ballSpeed: 'ballSpeedMaxLevel',
   ballDamage: 'ballDamageMaxLevel',
   ballLives: 'ballLivesMaxLevel',
   paddleLength: 'paddleLengthMaxLevel',
@@ -115,7 +113,6 @@ export class UpgradeSystem {
       lightning: 0,
       lightningJumps: 0,
       lightningStrike: 0,
-      ballSpeed: 0,
       ballDamage: 0,
       ballLives: 0,
       paddleLength: 0,
@@ -142,10 +139,6 @@ export class UpgradeSystem {
 
   get rapidVolleyChance() {
     return Math.min(1, GAME.upgrade.rapidVolleyChancePerLevel * this.levels.rapidVolley);
-  }
-
-  get ballSpeedMultiplier() {
-    return GAME.upgrade.ballSpeedMultiplierPerLevel ** this.levels.ballSpeed;
   }
 
   get ballDamageBonus() {
@@ -273,13 +266,6 @@ export class UpgradeSystem {
 
     if (id === 'rapidFire') {
       this.scene.autoFire.timeUntilShot = Math.min(this.scene.autoFire.timeUntilShot, this.fireInterval);
-    } else if (id === 'ballSpeed') {
-      const multiplier = GAME.upgrade.ballSpeedMultiplierPerLevel;
-      for (const ball of this.scene.world.all('ball')) {
-        ball.velocityX *= multiplier;
-        ball.velocityY *= multiplier;
-        ball.speed *= multiplier;
-      }
     } else if (id === 'ballDamage') {
       for (const ball of this.scene.world.all('ball')) {
         addBallBaseDamage(
@@ -494,13 +480,6 @@ export class UpgradeSystem {
         level: this.levels.doublePaddle,
         maxLevel: GAME.upgrade.doublePaddleMaxLevel,
         description: `副挡板宽度增加主挡板的33%，当前 ${Math.round(GAME.upgrade.doublePaddleWidthRatioPerLevel * this.levels.doublePaddle * 100)}% → ${Math.round(Math.min(1, GAME.upgrade.doublePaddleWidthRatioPerLevel * (this.levels.doublePaddle + 1)) * 100)}%`,
-      },
-      {
-        id: 'ballSpeed',
-        name: '动能超频',
-        level: this.levels.ballSpeed,
-        maxLevel: GAME.upgrade.ballSpeedMaxLevel,
-        description: `所有球速度提升 ${Math.round((GAME.upgrade.ballSpeedMultiplierPerLevel - 1) * 100)}%`,
       },
       {
         id: 'ballDamage',

@@ -133,6 +133,7 @@ export function createDefaultBallBehaviors() {
     const speed = Math.hypot(ball.velocityX, ball.velocityY) * speedRatio;
     const created = [];
     for (let index = 0; index < count; index += 1) {
+      if (scene.world.count('ball', { includePending: true }) >= GAME.ball.maximumActiveCount) break;
       const progress = count === 1 ? .5 : index / (count - 1);
       const angle = baseAngle - spread / 2 + spread * progress;
       const derived = scene.ballFactory.createDerived({

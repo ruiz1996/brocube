@@ -20,6 +20,14 @@ export class AutoFireSystem {
 
   get interval() { return this.scene.upgrades.fireInterval; }
 
+  get activeBallCount() {
+    return this.scene.world.count('ball', { includePending: true });
+  }
+
+  get isAtBallLimit() {
+    return this.activeBallCount >= GAME.ball.maximumActiveCount;
+  }
+
   reset() {
     this.timeUntilShot = .25;
     this.rapidShotsRemaining = 0;
@@ -27,12 +35,14 @@ export class AutoFireSystem {
   }
 
   update(dt) {
+    if (this.isAtBallLimit) return;
     this.#updateRapidShots(dt);
+    if (this.isAtBallLimit) return;
     this.timeUntilShot -= dt;
     if (this.timeUntilShot > 0) return;
 
-    this.#fireAutomaticShot();
-    if (this.random() < this.scene.upgrades.rapidVolleyChance) {
+    const launched = this.#fireAutomaticShot();
+    if (launched > 0 && this.random() < this.scene.upgrades.rapidVolleyChance) {
       this.rapidShotsRemaining = Math.max(0, GAME.upgrade.rapidVolleyBallCount - 1);
       this.timeUntilRapidShot = GAME.upgrade.rapidVolleyShotInterval;
       this.scene.events.emit('ball:rapid-volley', {
@@ -150,8 +160,12 @@ export class AutoFireSystem {
     if (this.rapidShotsRemaining <= 0) return;
     this.timeUntilRapidShot -= dt;
     let emitted = 0;
-    while (this.timeUntilRapidShot <= 0 && this.rapidShotsRemaining > 0 && emitted < 5) {
-      this.#fireAutomaticShot();
+    while (this.timeUntilRapidShot <= 0
+      && this.rapidShotsRemaining > 0
+      && emitted < 5
+      && !this.isAtBallLimit) {
+      const launched = this.#fireAutomaticShot();
+      if (launched <= 0) break;
       this.rapidShotsRemaining -= 1;
       this.timeUntilRapidShot += GAME.upgrade.rapidVolleyShotInterval;
       emitted += 1;
@@ -160,6 +174,7 @@ export class AutoFireSystem {
 
   #fireAutomaticShot() {
     const pool = this.availablePrimaryShots();
+    let launched = 0;
     const fireFromPool = () => {
       const totalWeight = pool.reduce((sum, shot) => sum + (shot.selectionWeight ?? 1), 0);
       let roll = this.random() * totalWeight;
@@ -171,24 +186,28 @@ export class AutoFireSystem {
           break;
         }
       }
-      this.#fireBall(selected);
+      const ball = this.#fireBall(selected);
+      if (ball) launched += 1;
+      return ball;
     };
     fireFromPool();
     if (this.scene.upgrades.levels.doubleShot > 0) {
       fireFromPool();
     } else if (this.random() < this.scene.upgrades.extraBallChance) {
-      this.#fireBall({
+      if (this.#fireBall({
         randomized: true, definitionId: BASIC_BALL_ID,
         emitterId: 'paddle', source: 'multi-shot',
-      });
+      })) launched += 1;
     }
     if (this.scene.collectibleRun.extraSpecialBallChance > 0
       && this.random() < this.scene.collectibleRun.extraSpecialBallChance) {
-      fireFromPool();
-      this.scene.events.emit('ball:collectible-extra-shot', {
-        chance: this.scene.collectibleRun.extraSpecialBallChance,
-      });
+      if (fireFromPool()) {
+        this.scene.events.emit('ball:collectible-extra-shot', {
+          chance: this.scene.collectibleRun.extraSpecialBallChance,
+        });
+      }
     }
+    return launched;
   }
 
   #fireBall({
@@ -212,6 +231,7 @@ export class AutoFireSystem {
     guidance = null,
     orbitingDamage = null,
   }) {
+    if (this.isAtBallLimit) return null;
     const definition = this.scene.ballDefinitions.get(definitionId);
     const shot = this.scene.ballEmitters.createShot(emitterId, {
       scene: this.scene, random: this.random, randomized, radius: definition.radius,
@@ -219,7 +239,7 @@ export class AutoFireSystem {
     if (!shot) return null;
     const ball = this.scene.ballFactory.createPrimary({
       definitionId, ...shot, speed: GAME.ball.speed,
-      speedMultiplier: this.scene.upgrades.ballSpeedMultiplier * speedMultiplier,
+      speedMultiplier,
       lives: this.scene.upgrades.newBallLives,
       damageOverride: definition.damage + this.scene.upgrades.ballDamageBonus,
       damageMultiplier: definition.contactDamage === false ? 1 : damageMultiplier,

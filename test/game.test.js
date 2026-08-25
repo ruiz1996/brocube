@@ -85,6 +85,7 @@ test('World 延迟添加并清理销毁实体', () => {
   const world = new World();
   const entity = world.add(new Entity('test'));
   assert.equal(world.all().length, 0);
+  assert.equal(world.count('test', { includePending: true }), 1);
   world.flush();
   assert.equal(world.first('test'), entity);
   entity.destroy();
@@ -1253,6 +1254,49 @@ test('挡板每三秒自动发射一颗新球', () => {
   scene.exit();
 });
 
+test('场上球达到六十颗时暂停所有自动发射，腾出位置后恢复且不会超限', () => {
+  const events = new EventBus();
+  const launches = [];
+  events.on('ball:launched', (payload) => launches.push(payload));
+  const scene = new BreakoutScene();
+  scene.enter({
+    engine: { setPaused() {} },
+    input: { pointer: {}, pressed() { return false; }, isDown() { return false; } },
+    events,
+    ctx: null,
+    plugins: { plugins: new Map() },
+  });
+  scene.startNewGame();
+
+  for (let index = 0; index < GAME.ball.maximumActiveCount; index += 1) {
+    scene.world.add(scene.ballFactory.createPrimary({
+      x: GAME.width / 2,
+      y: GAME.height / 2,
+      angle: -Math.PI / 2,
+      speed: 0,
+    }));
+  }
+  scene.world.flush();
+  scene.upgrades.levels.doubleShot = 1;
+  scene.autoFire.timeUntilShot = 0;
+  scene.autoFire.rapidShotsRemaining = 4;
+  scene.autoFire.timeUntilRapidShot = 0;
+
+  scene.update(.1);
+  assert.equal(scene.world.all('ball').length, GAME.ball.maximumActiveCount);
+  assert.equal(scene.autoFire.timeUntilShot, 0);
+  assert.equal(scene.autoFire.rapidShotsRemaining, 4);
+  assert.equal(launches.length, 0);
+
+  scene.world.first('ball').destroy();
+  scene.world.flush();
+  scene.update(.1);
+  assert.equal(scene.world.all('ball').length, GAME.ball.maximumActiveCount);
+  assert.equal(scene.autoFire.rapidShotsRemaining, 3);
+  assert.equal(launches.length, 1);
+  scene.exit();
+});
+
 test('五连速射概率可强化三级，触发后按短间隔共发射五颗球', () => {
   const events = new EventBus();
   const input = { pointer: { active: false, justPressed: false }, pressed() { return false; }, isDown() { return false; } };
@@ -1952,12 +1996,13 @@ test('天顶续航在普通底线判定失败后为天顶球追加独立保留�
   scene.exit();
 });
 
-test('方块血量按可调公式随时间和分数无上限增长', () => {
-  assert.equal(calculateExpectedBrickHitPoints({ elapsed: 0, score: 0 }), 14);
-  assert.ok(calculateExpectedBrickHitPoints({ elapsed: 60, score: 0 }) > 20);
-  assert.ok(calculateExpectedBrickHitPoints({ elapsed: 0, score: 5000 }) > 20);
-  assert.ok(calculateExpectedBrickHitPoints({ elapsed: 600, score: 100000 }) > 150);
-  assert.equal(selectBrickHitPoints({ elapsed: 0, score: 0 }, () => .5), 14);
+test('方块血量按可调公式成长，并由全局系数统一减半', () => {
+  assert.equal(GAME.brick.healthMultiplier, 0.5);
+  assert.equal(calculateExpectedBrickHitPoints({ elapsed: 0, score: 0 }), 7);
+  assert.ok(calculateExpectedBrickHitPoints({ elapsed: 60, score: 0 }) > 10);
+  assert.ok(calculateExpectedBrickHitPoints({ elapsed: 0, score: 5000 }) > 10);
+  assert.ok(calculateExpectedBrickHitPoints({ elapsed: 600, score: 100000 }) > 75);
+  assert.equal(selectBrickHitPoints({ elapsed: 0, score: 0 }, () => .5), 7);
 
   const smallest = { width: GAME.brick.minWidth, height: GAME.brick.minHeight };
   const largest = { width: GAME.brick.maxWidth, height: GAME.brick.maxHeight };
@@ -1983,7 +2028,7 @@ test('方块血量按可调公式随时间和分数无上限增长', () => {
   };
   assert.equal(
     calculateExpectedBrickHitPoints({ elapsed: 120, score: 2000 }, customFormula),
-    12,
+    6,
   );
 });
 
@@ -2549,7 +2594,7 @@ test('第五个 Boss 起终局压力按波次复合增长', () => {
       * GAME.brick.bossHealthMultiplier
       * seventh.bossHealthMultiplier,
   );
-  assert.ok(seventhBossHp > 5000000);
+  assert.ok(seventhBossHp > 2500000);
 });
 
 test('第七个Boss开始进入Boss Rush并在击杀后短间隔刷新强化Boss', () => {
@@ -2767,13 +2812,6 @@ test('分数强化可以重复选择并作用于发球和场上球', () => {
   assert.ok(automaticLaunch.velocityY < 0);
   assert.ok(extraLaunch.velocityY < 0);
 
-  const ball = scene.world.first('ball');
-  const speedBefore = Math.hypot(ball.velocityX, ball.velocityY);
-  scene.upgrades.check(scene.upgrades.nextScore);
-  scene.chooseUpgrade('ballSpeed');
-  const speedAfter = Math.hypot(ball.velocityX, ball.velocityY);
-  assert.ok(Math.abs(speedAfter / speedBefore - GAME.upgrade.ballSpeedMultiplierPerLevel) < .0001);
-
   scene.upgrades.check(scene.upgrades.nextScore);
   scene.chooseUpgrade('rapidFire');
   assert.equal(scene.upgrades.levels.rapidFire, 2);
@@ -2896,8 +2934,7 @@ test('随机强化池只显示三项，有限强化满级后退出候选池', ()
   scene.exit();
 });
 
-test('动能超频最多强化三级，满级后退出随机池', () => {
-  assert.equal(GAME.upgrade.ballSpeedMaxLevel, 3);
+test('常规全局速度强化已从强化图鉴和随机池移除', () => {
   const scene = new BreakoutScene();
   scene.enter({
     engine: { setPaused() {} },
@@ -2907,15 +2944,12 @@ test('动能超频最多强化三级，满级后退出随机池', () => {
     plugins: { plugins: new Map() },
   });
   scene.startNewGame();
-  for (let level = 0; level < GAME.upgrade.ballSpeedMaxLevel; level += 1) {
-    scene.upgrades.waitingForChoice = true;
-    scene.upgrades.pendingChoices = 1;
-    scene.state = 'upgrading';
-    assert.equal(scene.chooseUpgrade('ballSpeed'), true);
-  }
-  assert.equal(scene.upgrades.levels.ballSpeed, 3);
+  assert.equal(GAME.upgrade.ballSpeedMaxLevel, undefined);
+  assert.equal(scene.upgrades.levels.ballSpeed, undefined);
+  assert.equal(scene.upgrades.catalog().some(({ id }) => id === 'ballSpeed'), false);
   assert.equal(scene.upgrades.isAvailable('ballSpeed'), false);
   assert.equal(scene.upgrades.options().some(({ id }) => id === 'ballSpeed'), false);
+  assert.equal(scene.upgrades.setAutoUpgrade('ballSpeed', true), false);
   scene.exit();
 });
 
@@ -2935,7 +2969,7 @@ test('强化图鉴可预选自动升级，命中随机三选一时不暂停并�
   });
   scene.startNewGame();
 
-  assert.equal(scene.upgrades.catalogState().length, 25);
+  assert.equal(scene.upgrades.catalogState().length, 24);
   assert.equal(scene.upgrades.setAutoUpgrade('rapidFire', true), true);
   scene.upgrades.options = () => scene.upgrades.catalog().filter(({ id }) => (
     ['rapidFire', 'paddleLength', 'bottomBounce'].includes(id)

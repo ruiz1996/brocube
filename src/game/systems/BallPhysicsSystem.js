@@ -116,7 +116,7 @@ export class BallPhysicsSystem {
           const collision = circleAabb(ball, paddle);
           if (!collision) continue;
           const relativeHit = clamp((ball.x - (paddle.x + paddle.width / 2)) / (paddle.width / 2), -1, 1);
-          const maximumSpeed = GAME.ball.maxSpeed * this.scene.upgrades.ballSpeedMultiplier;
+          const maximumSpeed = GAME.ball.maxSpeed;
           const speed = Math.min(maximumSpeed, Math.hypot(ball.velocityX, ball.velocityY) * 1.012);
           const angle = relativeHit * Math.PI * .36;
           ball.velocityX = Math.sin(angle) * speed + paddle.velocityX * .06;
